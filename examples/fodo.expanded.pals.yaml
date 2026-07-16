@@ -1,0 +1,109 @@
+# EXPANDED representation of the three-cell FODO channel defined in
+# examples/fodo.pals.yaml.
+#
+# In the expanded representation (source/overview.md):
+# - the facility holds only fully expanded Lattice entries;
+# - the beam line hierarchy is flattened into branches of concrete
+#   elements (here: BeginningEle + 3 x (drift1 quad1 drift2 quad2 drift1)
+#   + end Marker), with `repeat` and `inherit` fully materialized;
+# - every element carries its concrete parameters and s_position; no
+#   references, constants, or expressions remain;
+# - element names may repeat (e.g. drift1 appears twice per cell).
+#
+# Validate with:
+#   python3 schema/validate_pals.py examples/fodo.expanded.pals.yaml
+#
+PALS:
+  version: null  # later, we will put the version of the PALS standard here
+
+  facility:
+    - fodo_lattice:
+        kind: Lattice
+        branches:
+          - fodo_channel:
+              elements:
+                - beginning:
+                    kind: BeginningEle
+                    s_position: 0.0
+
+                # cell 1
+                - drift1:
+                    kind: Drift
+                    length: 0.25
+                    s_position: 0.0
+                - quad1:
+                    kind: Quadrupole
+                    length: 1.0
+                    s_position: 0.25
+                    MagneticMultipoleP:
+                      Bn1: 1.0
+                - drift2:
+                    kind: Drift
+                    length: 0.5
+                    s_position: 1.25
+                - quad2:
+                    kind: Quadrupole
+                    length: 1.0
+                    s_position: 1.75
+                    MagneticMultipoleP:
+                      Bn1: -1.0
+                - drift1:
+                    kind: Drift
+                    length: 0.25
+                    s_position: 2.75
+
+                # cell 2
+                - drift1:
+                    kind: Drift
+                    length: 0.25
+                    s_position: 3.0
+                - quad1:
+                    kind: Quadrupole
+                    length: 1.0
+                    s_position: 3.25
+                    MagneticMultipoleP:
+                      Bn1: 1.0
+                - drift2:
+                    kind: Drift
+                    length: 0.5
+                    s_position: 4.25
+                - quad2:
+                    kind: Quadrupole
+                    length: 1.0
+                    s_position: 4.75
+                    MagneticMultipoleP:
+                      Bn1: -1.0
+                - drift1:
+                    kind: Drift
+                    length: 0.25
+                    s_position: 5.75
+
+                # cell 3
+                - drift1:
+                    kind: Drift
+                    length: 0.25
+                    s_position: 6.0
+                - quad1:
+                    kind: Quadrupole
+                    length: 1.0
+                    s_position: 6.25
+                    MagneticMultipoleP:
+                      Bn1: 1.0
+                - drift2:
+                    kind: Drift
+                    length: 0.5
+                    s_position: 7.25
+                - quad2:
+                    kind: Quadrupole
+                    length: 1.0
+                    s_position: 7.75
+                    MagneticMultipoleP:
+                      Bn1: -1.0
+                - drift1:
+                    kind: Drift
+                    length: 0.25
+                    s_position: 8.75
+
+                - end:
+                    kind: Marker
+                    s_position: 9.0

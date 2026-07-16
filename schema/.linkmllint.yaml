@@ -1,0 +1,11 @@
+# linkml-lint configuration for the PALS expanded schema.
+#
+# The standard_naming rule is disabled deliberately: slot and class names
+# in this schema must match the PALS standard verbatim (parameter groups
+# are upper camel case ending in "P", e.g. `ApertureP`; multipole slots
+# embed the order, e.g. `Bn1`, `Ks2L`). Renaming them to snake_case would
+# change the serialized file format.
+extends: recommended
+rules:
+  standard_naming:
+    level: disabled

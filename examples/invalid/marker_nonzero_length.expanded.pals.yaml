@@ -1,0 +1,20 @@
+# INVALID on purpose: a Marker element must have zero length
+# (source/lattice-element-kinds.md, s:marker). Used as a negative test
+# for schema/pals-expanded.linkml.yaml.
+PALS:
+  facility:
+    - lat:
+        kind: Lattice
+        branches:
+          - line1:
+              elements:
+                - beginning:
+                    kind: BeginningEle
+                - d1:
+                    kind: Drift
+                    length: 1.0
+                    s_position: 0.0
+                - end:
+                    kind: Marker
+                    length: 0.5   # INVALID: must be 0
+                    s_position: 1.0

@@ -1,0 +1,19 @@
+# INVALID on purpose: Placeholder elements are never present in an
+# expanded lattice (source/lattice-element-kinds.md, s:placeholder), so
+# the expanded schema defines no Placeholder class and the kind fails
+# type-designator resolution. Used as a negative test for
+# schema/pals-expanded.linkml.yaml.
+PALS:
+  facility:
+    - lat:
+        kind: Lattice
+        branches:
+          - line1:
+              elements:
+                - beginning:
+                    kind: BeginningEle
+                - ghost:
+                    kind: Placeholder   # INVALID in the expanded form
+                - end:
+                    kind: Marker
+                    s_position: 0.0

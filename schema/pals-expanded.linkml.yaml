@@ -1,0 +1,3769 @@
+# LinkML schema for the EXPANDED representation of the
+# Particle Accelerator Lattice Standard (PALS).
+
+id: https://github.com/pals-project/pals/schema/expanded
+name: pals-expanded
+title: PALS Expanded Lattice Representation
+description: >-
+  Formal LinkML schema for the EXPANDED representation of the Particle
+  Accelerator Lattice Standard (PALS).
+
+  PALS defines two representations of a lattice (source/overview.md): the
+  "exact" representation, which is a direct translation of a PALS input file,
+  and the "expanded" representation, in which all beam lines are expanded
+  into branches of concrete lattice elements, all expressions are evaluated,
+  all `set` commands are applied, all `repeat`/`direction`/subline/
+  superposition constructs are materialized, all Placeholder elements are
+  removed, all Fork elements are processed into branches, and dependent
+  (output) parameters such as ReferenceP and FloorP are computed.
+
+  This schema describes ONLY the expanded representation. In this form the
+  `facility` list contains one or more fully concrete `Lattice` entries and
+  nothing else. No references (element inheritance, `use`, name references),
+  constants, variables, or expressions may appear; every parameter value is
+  a literal.
+
+  WIRE FORMAT. PALS serializes named entries (facility items, branches,
+  branch elements, and UnionEle sub-elements) as ordered lists of
+  single-key mappings, e.g. `- drift1: {kind: Drift}`, and authors as
+  `- author: {...}` items. Names need not be unique. That shape is not
+  expressible in the LinkML instance model, so this schema describes the
+  equivalent NORMALIZED structure in which each entry carries its name in
+  an explicit required `name` field, e.g. `{name: drift1, kind: Drift}`.
+  The bidirectional transformation between the two forms is purely
+  mechanical and is provided by `schema/normalize_names.py` in this
+  repository. Validate a PALS expanded file by normalizing it first.
+
+  UNITS. Units follow the PALS conventions (source/fundamentals.md): SI
+  except energy in eV; angles in radians; phases in units of rad/2pi.
+  Unit metadata on slots is annotation only and is not validated.
+
+  NULL / INF. PALS uses `null` for "not set" and permits `Inf`/`-Inf` for
+  reals. In the expanded representation "not set" is expressed by omitting
+  the key. JSON Schema cannot represent infinities; their use is legal PALS
+  but outside what generated validators can check.
+license: https://creativecommons.org/licenses/by/4.0/
+version: 0.1.0
+
+prefixes:
+  pals: https://github.com/pals-project/pals/schema/expanded/
+  linkml: https://w3id.org/linkml/
+default_prefix: pals
+default_range: string
+
+imports:
+  - linkml:types
+
+#=====================================================================
+# Enumerations
+#=====================================================================
+
+enums:
+
+  PhaseSpaceCoordinatesEnum:
+    description: >-
+      Phase space coordinate system used in the lattice
+      (source/coordinates.md, s:phase.space).
+    permissible_values:
+      ANGLE_AND_ENERGY:
+      ANGLE_AND_MOMENTUM:
+      KINETIC_AND_ENERGY:
+      KINETIC_AND_MOMENTUM:
+        description: Default.
+
+  ApertureShapeEnum:
+    description: Aperture shape switch (source/parameters/aperture.md).
+    permissible_values:
+      RECTANGULAR:
+        description: Rectangular shape.
+      ELLIPTICAL:
+        description: Elliptical shape. Default.
+      VERTICES:
+        description: Shape defined by a set of vertices.
+      CUSTOM_SHAPE:
+        description: Shape defined outside of the PALS standard.
+
+  ApertureLocationEnum:
+    description: Aperture location switch (source/parameters/aperture.md).
+    permissible_values:
+      ENTRANCE_END:
+        description: Body entrance end. Default.
+      CENTER:
+        description: Element center.
+      EXIT_END:
+        description: Body exit end.
+      BOTH_ENDS:
+      NOWHERE:
+      EVERYWHERE:
+
+  BendRefGeometryEnum:
+    description: >-
+      Reference bend geometry (source/parameters/bend.md, `ref_geometry`).
+      Values are lower case in the standard.
+    permissible_values:
+      arc:
+        description: Reference is the curvilinear arc coordinates. Default.
+      chord:
+        description: >-
+          Z-axis is the chord connecting the entrance origin point to the
+          exit origin point.
+      entrance_coords:
+        description: Rectangular coordinates commensurate with the entrance coordinates.
+      exit_coords:
+        description: Rectangular coordinates commensurate with the exit coordinates.
+
+  BendMultipoleGeometryEnum:
+    description: >-
+      Geometry used to calculate multipoles in a bend
+      (source/parameters/bend.md, `multipole_geometry`). Values are lower
+      case in the standard.
+    permissible_values:
+      follows_ref_geometry:
+        description: Use geometry equivalent to the setting of `ref_geometry`. Default.
+      vertically_pure:
+        description: Vertically pure multipoles with arc geometry.
+      horizontally_pure:
+        description: Horizontally pure multipoles with arc geometry.
+      chord:
+        description: >-
+          Z-axis is the chord connecting the entrance origin point to the
+          exit origin point.
+      entrance_coords:
+        description: Rectangular coordinates commensurate with the entrance coordinates.
+      exit_coords:
+        description: Rectangular coordinates commensurate with the exit coordinates.
+
+  CavityTypeEnum:
+    description: RF cavity type (source/parameters/rf.md).
+    permissible_values:
+      STANDING_WAVE:
+        description: Default.
+      TRAVELING_WAVE:
+
+  ZeroPhaseEnum:
+    description: Sets what zero RF phase means (source/parameters/rf.md).
+    permissible_values:
+      ACCELERATING:
+        description: Zero phase is the maximum accelerating phase. Default.
+      BELOW_TRANSITION:
+        description: >-
+          Zero phase is at the stable zero crossing for particles below
+          transition.
+      ABOVE_TRANSITION:
+        description: >-
+          Zero phase is at the stable zero crossing for particles above
+          transition.
+
+  ForkDirectionEnum:
+    description: >-
+      Longitudinal direction of travel of the injected beam
+      (source/parameters/fork.md).
+    permissible_values:
+      FORWARDS:
+        description: Injected particle propagates in the forward (+s) direction. Default.
+      BACKWARDS:
+        description: Injected particle propagates in the backward (-s) direction.
+
+  PatchRefCoordsEnum:
+    description: >-
+      Coordinate system defining the length of a Patch
+      (source/parameters/patch.md).
+    permissible_values:
+      ENTRANCE_END:
+      EXIT_END:
+        description: Default.
+
+#=====================================================================
+# Shared slots
+#=====================================================================
+
+slots:
+
+  # ----- common named-entry slot -------------------------------------
+
+  name:
+    description: >-
+      The name of the entry. NORMALIZED-FORM NOTE: in the PALS wire format
+      this name is the single key of the entry's mapping
+      (`- drift1: {...}`); the normalization pre-pass moves it into this
+      field. Names need not be unique; after expansion, repeated instances
+      of the same input element share the same name.
+    required: true
+
+  # ----- ungrouped element parameters (source/lattice-element-parameters.md)
+
+  kind:
+    description: >-
+      Kind of element (Quadrupole, Drift, ...). Acts as the type
+      designator; its value is the name of a concrete class of this
+      schema. `Placeholder` is deliberately NOT a class of this schema
+      since Placeholder elements are never present in an expanded lattice
+      (source/lattice-element-kinds.md, s:placeholder).
+    required: true
+    designates_type: true
+    range: string
+
+  field_master:
+    description: >-
+      When there is a change in reference energy: if true, unnormalized
+      field strengths (magnetic multipoles, RF, bend fields) are held
+      constant and normalized strengths are varied; vice versa if false.
+      Default is null (unset).
+    range: boolean
+
+  is_on:
+    description: >-
+      Turns on or off the fields in an element. When off, the element
+      looks like a drift.
+    range: boolean
+    ifabsent: "true"
+
+  length:
+    description: >-
+      Length of element in meters. For bends this is the arc length.
+    range: float
+    unit:
+      ucum_code: m
+    ifabsent: float(0)
+
+  s_position:
+    description: >-
+      The longitudinal position of the element in meters. In the expanded
+      representation this is concrete for every element. Elements in a
+      branch are ordered by increasing s_position of their downstream
+      ends; zero-length elements at the same s track in list order
+      (source/lattice-construction.md).
+    range: float
+    unit:
+      ucum_code: m
+    ifabsent: float(0)
+
+  direction:
+    description: >-
+      Element orientation relative to the branch: +1 (default) or -1
+      (reversed). This is the line-item `direction` component of the
+      standard (source/beamlines.md, s:line.item); in the expanded
+      representation each element instance carries its concrete
+      orientation resulting from line reversal expansion.
+    range: integer
+    minimum_value: -1
+    maximum_value: 1
+    ifabsent: int(1)
+
+  # ----- parameter-group slots (source/lattice-element-parameter-groups.md)
+
+  ACKickerP:
+    description: AC kicker parameters (source/parameters/ackicker.md). Under construction.
+    range: ACKickerP
+    inlined: true
+
+  ApertureP:
+    description: Aperture parameters (source/parameters/aperture.md).
+    range: ApertureP
+    inlined: true
+
+  BeamBeamP:
+    description: Beam-beam interaction parameters (source/parameters/beambeam.md).
+    range: BeamBeamP
+    inlined: true
+
+  BendP:
+    description: Bend parameters (source/parameters/bend.md).
+    range: BendP
+    inlined: true
+
+  BodyShiftP:
+    description: >-
+      Orientation of the physical element with respect to its nominal
+      position (source/parameters/bodyshift.md).
+    range: BodyShiftP
+    inlined: true
+
+  ConverterP:
+    description: Converter parameters (source/parameters/converter.md). Under construction.
+    range: ConverterP
+    inlined: true
+
+  ElectricMultipoleP:
+    description: Electric multipoles (source/parameters/electricmultipole.md).
+    range: ElectricMultipoleP
+    inlined: true
+
+  FloorP:
+    description: >-
+      Floor (global coordinate) position and orientation of the branch
+      coordinate system at the element upstream edge
+      (source/parameters/floor.md). Output parameters unless `user_set`
+      is true (only sensible on BeginningEle).
+    range: FloorP
+    inlined: true
+
+  FloorShiftP:
+    description: Floor shift parameters (source/parameters/floorshift.md).
+    range: FloorShiftP
+    inlined: true
+
+  FoilP:
+    description: Foil parameters (source/parameters/foil.md). Under construction.
+    range: FoilP
+    inlined: true
+
+  ForkP:
+    description: Fork parameters (source/parameters/fork.md).
+    range: ForkP
+    inlined: true
+
+  GirderP:
+    description: Girder parameters (source/parameters/girder.md). Under construction.
+    range: GirderP
+    inlined: true
+
+  MagneticMultipoleP:
+    description: Magnetic multipoles (source/parameters/magneticmultipole.md).
+    range: MagneticMultipoleP
+    inlined: true
+
+  MetaP:
+    description: >-
+      Metadata parameters (source/parameters/meta.md). Besides the six
+      standard components (alias, ID, label, description, location,
+      history), MetaP may hold arbitrary custom metadata that does not
+      affect tracking; this class is therefore OPEN — unknown keys inside
+      MetaP are permitted.
+    range: MetaP
+    inlined: true
+
+  ParticleP:
+    description: >-
+      Single-particle coordinates or Gaussian beam distribution moments
+      (source/parameters/particle.md). NOTE: the standard currently
+      attaches this group to no element kind.
+    range: ParticleP
+    inlined: true
+
+  PatchP:
+    description: >-
+      Exit coordinates with respect to entrance coordinates
+      (source/parameters/patch.md).
+    range: PatchP
+    inlined: true
+
+  ReferenceP:
+    description: >-
+      Reference energy, species, and time at the upstream end of the
+      element (source/parameters/reference.md). User settable only on
+      BeginningEle; an output (computed) parameter group on every other
+      element kind — in the expanded representation the computed values
+      are concrete and may be serialized on any element.
+    range: ReferenceP
+    inlined: true
+
+  ReferenceChangeP:
+    description: >-
+      Adjustment of reference parameters
+      (source/parameters/referencechange.md).
+    range: ReferenceChangeP
+    inlined: true
+
+  RFP:
+    description: RF parameters (source/parameters/rf.md).
+    range: RFP
+    inlined: true
+
+  SolenoidP:
+    description: Solenoid field (source/parameters/solenoid.md).
+    range: SolenoidP
+    inlined: true
+
+  TaylorP:
+    description: >-
+      Orbital and spin Taylor map (source/parameters/taylor.md).
+      NORMALIZED-FORM NOTE: the standard writes Taylor series as
+      `term <coef> <e1> ... <e6>` lines; this schema represents each
+      series as a list of TaylorTerm objects
+      `{coef: <coef>, exponents: [<e1>, ..., <e6>]}`.
+    range: TaylorP
+    inlined: true
+
+  TrackingP:
+    description: >-
+      Program-specific tracking parameters keyed by program name
+      (source/parameters/tracking.md). Free-form by design; not validated.
+    range: Any
+    inlined: true
+
+  TwissP:
+    description: >-
+      Initial Twiss, coupling, and dispersion parameters, typically at the
+      beginning of a lattice branch (source/parameters/twiss.md). NOTE:
+      the standard currently attaches this group to no element kind.
+    range: TwissP
+    inlined: true
+
+#=====================================================================
+# Utility classes
+#=====================================================================
+
+classes:
+
+  Any:
+    description: Arbitrary structured content (not validated).
+    class_uri: linkml:Any
+
+  Author:
+    description: >-
+      An author associated with this file (source/fundamentals.md,
+      s:palsroot). WIRE-FORMAT NOTE: serialized as `- author: {...}` list
+      items; the normalization pre-pass unwraps the fixed `author` key.
+    attributes:
+      name:
+        description: Author name, e.g. "Lastname, Firstname". Required.
+        required: true
+      orcid:
+        description: ORCID identifier of the author.
+      affiliation:
+        description: Affiliation long name.
+      email:
+        description: Contact email address.
+
+  ExtensionLabel:
+    description: >-
+      A single registered extension label; the key is the label and the
+      value its short description (source/extensions.md).
+    attributes:
+      label:
+        identifier: true
+        description: The registered name, prefix, or suffix.
+      description:
+        description: Short description of the extension label.
+
+  ExtensionLabels:
+    description: >-
+      Registered extension labels (source/extensions.md). Any key name or
+      enum value in the PALS file matching one of the registered names, or
+      carrying a registered prefix or suffix, is treated as an extension
+      and is excluded from PALS validation. At least one of the three
+      components is required (documented; not machine-enforced here).
+    attributes:
+      names:
+        description: Dictionary of extension names to descriptions.
+        range: ExtensionLabel
+        multivalued: true
+        inlined: true
+      prefixes:
+        description: Dictionary of extension prefixes to descriptions.
+        range: ExtensionLabel
+        multivalued: true
+        inlined: true
+      suffixes:
+        description: Dictionary of extension suffixes to descriptions.
+        range: ExtensionLabel
+        multivalued: true
+        inlined: true
+
+  ApertureVertexItem:
+    description: >-
+      One item of an aperture vertex list (source/parameters/aperture.md).
+      Exactly one of `point`, `radius`, or `tilt` must be set per item
+      (documented; the wire format writes each item as a single-key
+      mapping which is directly valid against this class). A `radius` may
+      appear between two points (or after the last point, closing the
+      shape); `tilt` may only be present if a `radius` is present.
+    attributes:
+      point:
+        description: Vertex position; vector of two real numbers [m].
+        range: float
+        multivalued: true
+      radius:
+        description: >-
+          Arc radius between the surrounding points [m]; a single value
+          for a circular arc or two values for the half lengths of the
+          principal diameters of an elliptical arc.
+        range: float
+        multivalued: true
+      tilt:
+        description: Ellipse tilt angle [rad/2pi].
+        range: float
+
+  ApertureVertices:
+    description: >-
+      Aperture shape defined by a set of vertices
+      (source/parameters/aperture.md, `vertices`).
+    attributes:
+      center:
+        description: Vector of (x, y) center point [m].
+        range: float
+        multivalued: true
+      absolute_vertices:
+        description: >-
+          If false (default), vertex point positions are relative to
+          `center`; if true they are independent of `center`.
+        range: boolean
+        ifabsent: "false"
+      list:
+        description: Ordered list of vertex points.
+        range: ApertureVertexItem
+        multivalued: true
+        inlined_as_list: true
+
+  TaylorTerm:
+    description: >-
+      One monomial of a Taylor series (source/parameters/taylor.md):
+      coef * x^e1 * px^e2 * y^e3 * py^e4 * z^e5 * pz^e6.
+    attributes:
+      coef:
+        description: Real valued coefficient of the monomial.
+        range: float
+        required: true
+      exponents:
+        description: >-
+          The six integer exponents (e1 ... e6) for
+          (x, px, y, py, z, pz), in order. Exactly six values.
+        range: integer
+        multivalued: true
+        required: true
+
+  PhaseSpaceRef:
+    description: >-
+      Orbital reference point about which a Taylor map is constructed
+      (source/parameters/taylor.md, `ref_in`). Component meaning is set
+      by `phase_space_coordinates`.
+    attributes:
+      x:
+        description: x orbital component of the reference point.
+        range: float
+      px:
+        description: px orbital component of the reference point.
+        range: float
+      y:
+        description: y orbital component of the reference point.
+        range: float
+      py:
+        description: py orbital component of the reference point.
+        range: float
+      z:
+        description: z orbital component of the reference point.
+        range: float
+      pz:
+        description: pz orbital component of the reference point.
+        range: float
+
+#=====================================================================
+# Parameter groups
+#=====================================================================
+
+  ACKickerP:
+    description: >-
+      AC kicker parameters (source/parameters/ackicker.md). The standard
+      marks this group "In Construction" and documents no parameters yet.
+
+  ApertureP:
+    description: >-
+      Aperture description (source/parameters/aperture.md). The horizontal
+      aperture may be specified by x_min/x_max OR x_center/x_width but not
+      both; similarly for the vertical aperture.
+    attributes:
+      x_min:
+        description: Left aperture limit [m].
+        range: float
+        unit:
+          ucum_code: m
+      x_max:
+        description: Right aperture limit [m].
+        range: float
+        unit:
+          ucum_code: m
+      x_center:
+        description: Center of horizontal aperture [m].
+        range: float
+        unit:
+          ucum_code: m
+      x_width:
+        description: Horizontal aperture full width [m].
+        range: float
+        unit:
+          ucum_code: m
+      y_min:
+        description: Bottom aperture limit [m].
+        range: float
+        unit:
+          ucum_code: m
+      y_max:
+        description: Top aperture limit [m].
+        range: float
+        unit:
+          ucum_code: m
+      y_center:
+        description: Center of vertical aperture [m].
+        range: float
+        unit:
+          ucum_code: m
+      y_width:
+        description: Vertical aperture full width [m].
+        range: float
+        unit:
+          ucum_code: m
+      shape:
+        description: Aperture shape switch.
+        range: ApertureShapeEnum
+        ifabsent: string(ELLIPTICAL)
+      location:
+        description: Aperture location switch.
+        range: ApertureLocationEnum
+        ifabsent: string(ENTRANCE_END)
+      vertices:
+        description: Vertex-defined aperture shape (used with shape VERTICES).
+        range: ApertureVertices
+        inlined: true
+      material:
+        description: >-
+          Material of the aperture. Using chemical formulas like Cu and Fe
+          is the most portable.
+      thickness:
+        description: Aperture thickness [m].
+        range: float
+        unit:
+          ucum_code: m
+        ifabsent: float(0)
+      aperture_shifts_with_body:
+        description: >-
+          Whether misaligning the element affects the placement of the
+          aperture.
+        range: boolean
+        ifabsent: "false"
+      aperture_active:
+        description: false implies the aperture is not operating.
+        range: boolean
+        ifabsent: "true"
+    rules:
+      # Note: each rule carries exactly one ABSENT postcondition slot so
+      # that the JSON Schema translation (then: {not: {required: [...]}})
+      # enforces per-slot absence.
+      - description: x_center/x_width excludes x_min.
+        preconditions:
+          any_of:
+            - slot_conditions:
+                x_center:
+                  value_presence: PRESENT
+            - slot_conditions:
+                x_width:
+                  value_presence: PRESENT
+        postconditions:
+          slot_conditions:
+            x_min:
+              value_presence: ABSENT
+      - description: x_center/x_width excludes x_max.
+        preconditions:
+          any_of:
+            - slot_conditions:
+                x_center:
+                  value_presence: PRESENT
+            - slot_conditions:
+                x_width:
+                  value_presence: PRESENT
+        postconditions:
+          slot_conditions:
+            x_max:
+              value_presence: ABSENT
+      - description: y_center/y_width excludes y_min.
+        preconditions:
+          any_of:
+            - slot_conditions:
+                y_center:
+                  value_presence: PRESENT
+            - slot_conditions:
+                y_width:
+                  value_presence: PRESENT
+        postconditions:
+          slot_conditions:
+            y_min:
+              value_presence: ABSENT
+      - description: y_center/y_width excludes y_max.
+        preconditions:
+          any_of:
+            - slot_conditions:
+                y_center:
+                  value_presence: PRESENT
+            - slot_conditions:
+                y_width:
+                  value_presence: PRESENT
+        postconditions:
+          slot_conditions:
+            y_max:
+              value_presence: ABSENT
+
+  BeamBeamP:
+    description: >-
+      Parameters of an oppositely moving "strong" beam generating
+      electromagnetic fields at the interaction point, assumed 3D Gaussian
+      (source/parameters/beambeam.md). All defaults are null (unset).
+    attributes:
+      sigma_x:
+        description: Horizontal beam size of the opposite beam [m].
+        range: float
+        unit:
+          ucum_code: m
+      sigma_y:
+        description: Vertical beam size of the opposite beam [m].
+        range: float
+        unit:
+          ucum_code: m
+      sigma_z:
+        description: Longitudinal beam size of the opposite beam [m].
+        range: float
+        unit:
+          ucum_code: m
+      alpha_x:
+        description: Horizontal Twiss alpha at the interaction point [unitless].
+        range: float
+      beta_x:
+        description: Horizontal Twiss beta at the interaction point [m].
+        range: float
+        unit:
+          ucum_code: m
+      alpha_y:
+        description: Vertical Twiss alpha at the interaction point [unitless].
+        range: float
+      beta_y:
+        description: Vertical Twiss beta at the interaction point [m].
+        range: float
+        unit:
+          ucum_code: m
+      charge:
+        description: Charge of the opposite beam [unitless].
+        range: float
+      energy:
+        description: Total energy of the opposite beam [eV].
+        range: float
+        unit:
+          ucum_code: eV
+      N_particle:
+        description: Number of particles in the opposite beam [unitless].
+        range: float
+
+  BendP:
+    description: >-
+      Shape parameters of a Bend element (source/parameters/bend.md). The
+      parameters g_ref, angle_ref, rho_ref, and length are mutually
+      dependent; specifying more than two can be contradictory
+      (documented; not machine-enforced).
+    attributes:
+      angle_ref:
+        description: >-
+          Total reference bend angle [rad]; angle_ref = length * g_ref.
+        range: float
+        unit:
+          ucum_code: rad
+        ifabsent: float(0)
+      bend_field_ref:
+        description: >-
+          Reference bend field [T] needed for the reference particle to be
+          bent in a circle of radius rho_ref.
+        range: float
+        unit:
+          ucum_code: T
+        ifabsent: float(0)
+      bend_field_actual:
+        description: >-
+          OUTPUT parameter. Actual bend field perpendicular to the
+          reference plane [T].
+        range: float
+        unit:
+          ucum_code: T
+      e1:
+        description: >-
+          Entrance end pole face rotation with respect to a sector
+          geometry [rad].
+        range: float
+        unit:
+          ucum_code: rad
+        ifabsent: float(0)
+      e2:
+        description: >-
+          Exit end pole face rotation with respect to a sector geometry
+          [rad].
+        range: float
+        unit:
+          ucum_code: rad
+        ifabsent: float(0)
+      e1_rect:
+        description: >-
+          Entrance end pole face rotation with respect to a rectangular
+          geometry [rad].
+        range: float
+        unit:
+          ucum_code: rad
+        ifabsent: float(0)
+      e2_rect:
+        description: >-
+          Exit end pole face rotation with respect to a rectangular
+          geometry [rad].
+        range: float
+        unit:
+          ucum_code: rad
+        ifabsent: float(0)
+      edge1_int:
+        description: Entrance end fringe field integral [T*m].
+        range: float
+        unit:
+          ucum_code: T.m
+        ifabsent: float(0)
+      edge2_int:
+        description: Exit end fringe field integral [T*m].
+        range: float
+        unit:
+          ucum_code: T.m
+        ifabsent: float(0)
+      g_ref:
+        description: >-
+          Reference bend strength [1/m]; g_ref = 1/rho_ref.
+        range: float
+        unit:
+          ucum_code: m-1
+        ifabsent: float(0)
+      g_actual:
+        description: >-
+          OUTPUT parameter. Actual bending strength corresponding to
+          bend_field_actual [1/m].
+        range: float
+        unit:
+          ucum_code: m-1
+      h1:
+        description: Entrance end pole face curvature [1/m].
+        range: float
+        unit:
+          ucum_code: m-1
+        ifabsent: float(0)
+      h2:
+        description: Exit end pole face curvature [1/m].
+        range: float
+        unit:
+          ucum_code: m-1
+        ifabsent: float(0)
+      L_chord:
+        description: Chord length [m].
+        range: float
+        unit:
+          ucum_code: m
+        ifabsent: float(0)
+      L_sagitta:
+        description: >-
+          OUTPUT parameter. Sagitta length [m]; may be negative, with the
+          same sign as g_ref.
+        range: float
+        unit:
+          ucum_code: m
+      L_rectangle:
+        description: Rectangular length of the bend [m].
+        range: float
+        unit:
+          ucum_code: m
+        ifabsent: float(0)
+      multipole_geometry:
+        description: Sets how multipoles are calculated.
+        range: BendMultipoleGeometryEnum
+        ifabsent: string(follows_ref_geometry)
+      ref_geometry:
+        description: Reference bend geometry.
+        range: BendRefGeometryEnum
+        ifabsent: string(arc)
+      rho_ref:
+        description: >-
+          Reference bend radius [m]; rho_ref = 1/g_ref. May be infinite,
+          so it is generally better to work with g_ref. Default null.
+        range: float
+        unit:
+          ucum_code: m
+      tilt_ref:
+        description: >-
+          Reference tilt [rad]. Rotates the bend about the longitudinal
+          axis at the entrance face; unlike tilt of other elements it
+          bends the reference orbit along with the physical element.
+        range: float
+        unit:
+          ucum_code: rad
+        ifabsent: float(0)
+
+  BodyShiftP:
+    description: >-
+      Alignment of the physical element with respect to its nominal
+      position (source/parameters/bodyshift.md).
+    attributes:
+      x_offset:
+        description: Offset along x-axis [m].
+        range: float
+        unit:
+          ucum_code: m
+        ifabsent: float(0)
+      y_offset:
+        description: Offset along y-axis [m].
+        range: float
+        unit:
+          ucum_code: m
+        ifabsent: float(0)
+      z_offset:
+        description: Offset along z-axis [m].
+        range: float
+        unit:
+          ucum_code: m
+        ifabsent: float(0)
+      x_rot:
+        description: Rotation around x-axis [rad].
+        range: float
+        unit:
+          ucum_code: rad
+        ifabsent: float(0)
+      y_rot:
+        description: Rotation around y-axis [rad].
+        range: float
+        unit:
+          ucum_code: rad
+        ifabsent: float(0)
+      z_rot:
+        description: Rotation around z-axis [rad].
+        range: float
+        unit:
+          ucum_code: rad
+        ifabsent: float(0)
+
+  ConverterP:
+    description: >-
+      Converter element parameters (source/parameters/converter.md).
+      Marked "In Construction" by the standard.
+    attributes:
+      species_out:
+        description: >-
+          Species produced; becomes the reference species of the element
+          downstream of the Converter.
+      E_tot_ref_out:
+        description: Output (downstream) reference energy [eV].
+        range: float
+        unit:
+          ucum_code: eV
+
+  ElectricMultipoleP:
+    description: >-
+      Electric multipoles associated with the lattice element
+      (source/parameters/electricmultipole.md). For each order N
+      (0 = dipole, 1 = quadrupole, ...) the components are tiltN, EnN,
+      EsN and the length-integrated EnNL, EsNL. For a given order the two
+      strength components must be of the same type (both integrated or
+      both not) — documented; not machine-enforced. SCHEMA NOTE: slots are
+      generated explicitly for orders N = 0..21; higher orders are outside
+      what this schema can validate.
+    attributes:
+      geometry:
+        description: >-
+          Multipole geometry (shown in the standard's example; see
+          source/parameters/electricmultipole.md and the BendP
+          multipole_geometry documentation).
+        range: BendMultipoleGeometryEnum
+      tilt0:
+        description: Tilt of the order-0 electric multipole [rad].
+        range: float
+      En0:
+        description: Normal component of order 0 [V/m^1].
+        range: float
+      Es0:
+        description: Skew component of order 0 [V/m^1].
+        range: float
+      En0L:
+        description: Length integrated normal component of order 0 [V/m^0].
+        range: float
+      Es0L:
+        description: Length integrated skew component of order 0 [V/m^0].
+        range: float
+      tilt1:
+        description: Tilt of the order-1 electric multipole [rad].
+        range: float
+      En1:
+        description: Normal component of order 1 [V/m^2].
+        range: float
+      Es1:
+        description: Skew component of order 1 [V/m^2].
+        range: float
+      En1L:
+        description: Length integrated normal component of order 1 [V/m^1].
+        range: float
+      Es1L:
+        description: Length integrated skew component of order 1 [V/m^1].
+        range: float
+      tilt2:
+        description: Tilt of the order-2 electric multipole [rad].
+        range: float
+      En2:
+        description: Normal component of order 2 [V/m^3].
+        range: float
+      Es2:
+        description: Skew component of order 2 [V/m^3].
+        range: float
+      En2L:
+        description: Length integrated normal component of order 2 [V/m^2].
+        range: float
+      Es2L:
+        description: Length integrated skew component of order 2 [V/m^2].
+        range: float
+      tilt3:
+        description: Tilt of the order-3 electric multipole [rad].
+        range: float
+      En3:
+        description: Normal component of order 3 [V/m^4].
+        range: float
+      Es3:
+        description: Skew component of order 3 [V/m^4].
+        range: float
+      En3L:
+        description: Length integrated normal component of order 3 [V/m^3].
+        range: float
+      Es3L:
+        description: Length integrated skew component of order 3 [V/m^3].
+        range: float
+      tilt4:
+        description: Tilt of the order-4 electric multipole [rad].
+        range: float
+      En4:
+        description: Normal component of order 4 [V/m^5].
+        range: float
+      Es4:
+        description: Skew component of order 4 [V/m^5].
+        range: float
+      En4L:
+        description: Length integrated normal component of order 4 [V/m^4].
+        range: float
+      Es4L:
+        description: Length integrated skew component of order 4 [V/m^4].
+        range: float
+      tilt5:
+        description: Tilt of the order-5 electric multipole [rad].
+        range: float
+      En5:
+        description: Normal component of order 5 [V/m^6].
+        range: float
+      Es5:
+        description: Skew component of order 5 [V/m^6].
+        range: float
+      En5L:
+        description: Length integrated normal component of order 5 [V/m^5].
+        range: float
+      Es5L:
+        description: Length integrated skew component of order 5 [V/m^5].
+        range: float
+      tilt6:
+        description: Tilt of the order-6 electric multipole [rad].
+        range: float
+      En6:
+        description: Normal component of order 6 [V/m^7].
+        range: float
+      Es6:
+        description: Skew component of order 6 [V/m^7].
+        range: float
+      En6L:
+        description: Length integrated normal component of order 6 [V/m^6].
+        range: float
+      Es6L:
+        description: Length integrated skew component of order 6 [V/m^6].
+        range: float
+      tilt7:
+        description: Tilt of the order-7 electric multipole [rad].
+        range: float
+      En7:
+        description: Normal component of order 7 [V/m^8].
+        range: float
+      Es7:
+        description: Skew component of order 7 [V/m^8].
+        range: float
+      En7L:
+        description: Length integrated normal component of order 7 [V/m^7].
+        range: float
+      Es7L:
+        description: Length integrated skew component of order 7 [V/m^7].
+        range: float
+      tilt8:
+        description: Tilt of the order-8 electric multipole [rad].
+        range: float
+      En8:
+        description: Normal component of order 8 [V/m^9].
+        range: float
+      Es8:
+        description: Skew component of order 8 [V/m^9].
+        range: float
+      En8L:
+        description: Length integrated normal component of order 8 [V/m^8].
+        range: float
+      Es8L:
+        description: Length integrated skew component of order 8 [V/m^8].
+        range: float
+      tilt9:
+        description: Tilt of the order-9 electric multipole [rad].
+        range: float
+      En9:
+        description: Normal component of order 9 [V/m^10].
+        range: float
+      Es9:
+        description: Skew component of order 9 [V/m^10].
+        range: float
+      En9L:
+        description: Length integrated normal component of order 9 [V/m^9].
+        range: float
+      Es9L:
+        description: Length integrated skew component of order 9 [V/m^9].
+        range: float
+      tilt10:
+        description: Tilt of the order-10 electric multipole [rad].
+        range: float
+      En10:
+        description: Normal component of order 10 [V/m^11].
+        range: float
+      Es10:
+        description: Skew component of order 10 [V/m^11].
+        range: float
+      En10L:
+        description: Length integrated normal component of order 10 [V/m^10].
+        range: float
+      Es10L:
+        description: Length integrated skew component of order 10 [V/m^10].
+        range: float
+      tilt11:
+        description: Tilt of the order-11 electric multipole [rad].
+        range: float
+      En11:
+        description: Normal component of order 11 [V/m^12].
+        range: float
+      Es11:
+        description: Skew component of order 11 [V/m^12].
+        range: float
+      En11L:
+        description: Length integrated normal component of order 11 [V/m^11].
+        range: float
+      Es11L:
+        description: Length integrated skew component of order 11 [V/m^11].
+        range: float
+      tilt12:
+        description: Tilt of the order-12 electric multipole [rad].
+        range: float
+      En12:
+        description: Normal component of order 12 [V/m^13].
+        range: float
+      Es12:
+        description: Skew component of order 12 [V/m^13].
+        range: float
+      En12L:
+        description: Length integrated normal component of order 12 [V/m^12].
+        range: float
+      Es12L:
+        description: Length integrated skew component of order 12 [V/m^12].
+        range: float
+      tilt13:
+        description: Tilt of the order-13 electric multipole [rad].
+        range: float
+      En13:
+        description: Normal component of order 13 [V/m^14].
+        range: float
+      Es13:
+        description: Skew component of order 13 [V/m^14].
+        range: float
+      En13L:
+        description: Length integrated normal component of order 13 [V/m^13].
+        range: float
+      Es13L:
+        description: Length integrated skew component of order 13 [V/m^13].
+        range: float
+      tilt14:
+        description: Tilt of the order-14 electric multipole [rad].
+        range: float
+      En14:
+        description: Normal component of order 14 [V/m^15].
+        range: float
+      Es14:
+        description: Skew component of order 14 [V/m^15].
+        range: float
+      En14L:
+        description: Length integrated normal component of order 14 [V/m^14].
+        range: float
+      Es14L:
+        description: Length integrated skew component of order 14 [V/m^14].
+        range: float
+      tilt15:
+        description: Tilt of the order-15 electric multipole [rad].
+        range: float
+      En15:
+        description: Normal component of order 15 [V/m^16].
+        range: float
+      Es15:
+        description: Skew component of order 15 [V/m^16].
+        range: float
+      En15L:
+        description: Length integrated normal component of order 15 [V/m^15].
+        range: float
+      Es15L:
+        description: Length integrated skew component of order 15 [V/m^15].
+        range: float
+      tilt16:
+        description: Tilt of the order-16 electric multipole [rad].
+        range: float
+      En16:
+        description: Normal component of order 16 [V/m^17].
+        range: float
+      Es16:
+        description: Skew component of order 16 [V/m^17].
+        range: float
+      En16L:
+        description: Length integrated normal component of order 16 [V/m^16].
+        range: float
+      Es16L:
+        description: Length integrated skew component of order 16 [V/m^16].
+        range: float
+      tilt17:
+        description: Tilt of the order-17 electric multipole [rad].
+        range: float
+      En17:
+        description: Normal component of order 17 [V/m^18].
+        range: float
+      Es17:
+        description: Skew component of order 17 [V/m^18].
+        range: float
+      En17L:
+        description: Length integrated normal component of order 17 [V/m^17].
+        range: float
+      Es17L:
+        description: Length integrated skew component of order 17 [V/m^17].
+        range: float
+      tilt18:
+        description: Tilt of the order-18 electric multipole [rad].
+        range: float
+      En18:
+        description: Normal component of order 18 [V/m^19].
+        range: float
+      Es18:
+        description: Skew component of order 18 [V/m^19].
+        range: float
+      En18L:
+        description: Length integrated normal component of order 18 [V/m^18].
+        range: float
+      Es18L:
+        description: Length integrated skew component of order 18 [V/m^18].
+        range: float
+      tilt19:
+        description: Tilt of the order-19 electric multipole [rad].
+        range: float
+      En19:
+        description: Normal component of order 19 [V/m^20].
+        range: float
+      Es19:
+        description: Skew component of order 19 [V/m^20].
+        range: float
+      En19L:
+        description: Length integrated normal component of order 19 [V/m^19].
+        range: float
+      Es19L:
+        description: Length integrated skew component of order 19 [V/m^19].
+        range: float
+      tilt20:
+        description: Tilt of the order-20 electric multipole [rad].
+        range: float
+      En20:
+        description: Normal component of order 20 [V/m^21].
+        range: float
+      Es20:
+        description: Skew component of order 20 [V/m^21].
+        range: float
+      En20L:
+        description: Length integrated normal component of order 20 [V/m^20].
+        range: float
+      Es20L:
+        description: Length integrated skew component of order 20 [V/m^20].
+        range: float
+      tilt21:
+        description: Tilt of the order-21 electric multipole [rad].
+        range: float
+      En21:
+        description: Normal component of order 21 [V/m^22].
+        range: float
+      Es21:
+        description: Skew component of order 21 [V/m^22].
+        range: float
+      En21L:
+        description: Length integrated normal component of order 21 [V/m^21].
+        range: float
+      Es21L:
+        description: Length integrated skew component of order 21 [V/m^21].
+        range: float
+
+  FloorP:
+    description: >-
+      Placement (position and orientation) of the branch coordinate system
+      at the element upstream edge in global coordinates
+      (source/parameters/floor.md). Input if user_set is true, otherwise
+      computed (output).
+    attributes:
+      x:
+        description: Global x-coordinate [m].
+        range: float
+        unit:
+          ucum_code: m
+      y:
+        description: Global y-coordinate [m].
+        range: float
+        unit:
+          ucum_code: m
+      z:
+        description: Global z-coordinate [m].
+        range: float
+        unit:
+          ucum_code: m
+      theta:
+        description: Orientation angle theta [rad].
+        range: float
+        unit:
+          ucum_code: rad
+      phi:
+        description: Orientation angle phi [rad].
+        range: float
+        unit:
+          ucum_code: rad
+      psi:
+        description: Orientation angle psi [rad].
+        range: float
+        unit:
+          ucum_code: rad
+      user_set:
+        description: Is the placement set by the user or computed?
+        range: boolean
+        ifabsent: "false"
+
+  FloorShiftP:
+    description: >-
+      Shift of the reference curve of a FloorShift element
+      (source/parameters/floorshift.md). The standard does not state units
+      explicitly; PALS conventions imply meters for offsets, seconds for
+      t_offset, and radians for rotations.
+    attributes:
+      x_offset:
+        description: Offset in x-direction [m].
+        range: float
+        unit:
+          ucum_code: m
+      y_offset:
+        description: Offset in y-direction [m].
+        range: float
+        unit:
+          ucum_code: m
+      z_offset:
+        description: Offset in z-direction [m].
+        range: float
+        unit:
+          ucum_code: m
+      t_offset:
+        description: Time offset [s].
+        range: float
+        unit:
+          ucum_code: s
+      x_rot:
+        description: Rotation around x-axis [rad].
+        range: float
+        unit:
+          ucum_code: rad
+      y_rot:
+        description: Rotation around y-axis [rad].
+        range: float
+        unit:
+          ucum_code: rad
+      z_rot:
+        description: Rotation around z-axis [rad].
+        range: float
+        unit:
+          ucum_code: rad
+
+  FoilP:
+    description: >-
+      Foil element parameters (source/parameters/foil.md). Marked
+      "In Construction" by the standard.
+    attributes:
+      dE_ref:
+        description: >-
+          Reference energy change [eV]; the downstream reference energy is
+          E_tot_ref + dE_ref.
+        range: float
+        unit:
+          ucum_code: eV
+
+  ForkP:
+    description: >-
+      Parameters of a Fork element describing what the fork connects to
+      (source/parameters/fork.md). In the expanded representation
+      `to_line` names an existing branch of the enclosing lattice (all
+      forks are already processed). The destination element kind is
+      restricted to Marker, BeginningEle, FloorShift, or Fork
+      (source/lattice-construction.md; documented, not machine-enforced).
+    attributes:
+      to_line:
+        description: Name of the branch or beam line to fork to. Required.
+        required: true
+      destination_element:
+        description: >-
+          Destination element to fork to; default is the beginning
+          element. The name must be unique.
+      direction:
+        description: Longitudinal direction of travel of the injected beam.
+        range: ForkDirectionEnum
+        ifabsent: string(FORWARDS)
+      new_branch:
+        description: >-
+          Name to give the newly created destination branch; if null the
+          destination element is in an existing branch.
+      propagate_reference:
+        description: >-
+          Propagate reference species and energy (effective only when the
+          destination element is the beginning element).
+        range: boolean
+        ifabsent: "true"
+
+  GirderP:
+    description: >-
+      Girder parameters (source/parameters/girder.md). The standard marks
+      this group "In Construction" and documents no parameters yet.
+
+  MagneticMultipoleP:
+    description: >-
+      Magnetic multipoles associated with the lattice element
+      (source/parameters/magneticmultipole.md). For each order N
+      (0 = dipole, 1 = quadrupole, ...) the components are tiltN, field
+      strengths BnN/BsN, normalized strengths KnN/KsN with
+      (Kn, Ks) = q/P0 * (Bn, Bs), length-integrated variants with L
+      appended (BnNL, BsNL, KnNL, KsNL), and tapering parameters
+      (*_taper). The actual field is the sum of the field plus the
+      tapering field. For a given order the two strength components must
+      be of the same type (both integrated or not; both field or both
+      normalized) — documented; not machine-enforced. SCHEMA NOTE: slots
+      are generated explicitly for orders N = 0..21; higher orders are
+      outside what this schema can validate.
+    attributes:
+      tilt0:
+        description: Tilt of the order-0 multipole [rad].
+        range: float
+      Bn0:
+        description: Normal field component of order 0 [T/m^0].
+        range: float
+      Bs0:
+        description: Skew field component of order 0 [T/m^0].
+        range: float
+      Kn0:
+        description: Normalized normal component of order 0 [1/m^1].
+        range: float
+      Ks0:
+        description: Normalized skew component of order 0 [1/m^1].
+        range: float
+      Bn0L:
+        description: Length integrated normal field component of order 0 [T*m/m^0].
+        range: float
+      Bs0L:
+        description: Length integrated skew field component of order 0 [T*m/m^0].
+        range: float
+      Kn0L:
+        description: Length integrated normalized normal component of order 0 [1/m^0].
+        range: float
+      Ks0L:
+        description: Length integrated normalized skew component of order 0 [1/m^0].
+        range: float
+      Bn0_taper:
+        description: Tapering parameter associated with Bn0.
+        range: float
+      Bs0_taper:
+        description: Tapering parameter associated with Bs0.
+        range: float
+      Kn0_taper:
+        description: Tapering parameter associated with Kn0.
+        range: float
+      Ks0_taper:
+        description: Tapering parameter associated with Ks0.
+        range: float
+      Bn0L_taper:
+        description: Tapering parameter associated with Bn0L.
+        range: float
+      Bs0L_taper:
+        description: Tapering parameter associated with Bs0L.
+        range: float
+      Kn0L_taper:
+        description: Tapering parameter associated with Kn0L.
+        range: float
+      Ks0L_taper:
+        description: Tapering parameter associated with Ks0L.
+        range: float
+      tilt1:
+        description: Tilt of the order-1 multipole [rad].
+        range: float
+      Bn1:
+        description: Normal field component of order 1 [T/m^1].
+        range: float
+      Bs1:
+        description: Skew field component of order 1 [T/m^1].
+        range: float
+      Kn1:
+        description: Normalized normal component of order 1 [1/m^2].
+        range: float
+      Ks1:
+        description: Normalized skew component of order 1 [1/m^2].
+        range: float
+      Bn1L:
+        description: Length integrated normal field component of order 1 [T*m/m^1].
+        range: float
+      Bs1L:
+        description: Length integrated skew field component of order 1 [T*m/m^1].
+        range: float
+      Kn1L:
+        description: Length integrated normalized normal component of order 1 [1/m^1].
+        range: float
+      Ks1L:
+        description: Length integrated normalized skew component of order 1 [1/m^1].
+        range: float
+      Bn1_taper:
+        description: Tapering parameter associated with Bn1.
+        range: float
+      Bs1_taper:
+        description: Tapering parameter associated with Bs1.
+        range: float
+      Kn1_taper:
+        description: Tapering parameter associated with Kn1.
+        range: float
+      Ks1_taper:
+        description: Tapering parameter associated with Ks1.
+        range: float
+      Bn1L_taper:
+        description: Tapering parameter associated with Bn1L.
+        range: float
+      Bs1L_taper:
+        description: Tapering parameter associated with Bs1L.
+        range: float
+      Kn1L_taper:
+        description: Tapering parameter associated with Kn1L.
+        range: float
+      Ks1L_taper:
+        description: Tapering parameter associated with Ks1L.
+        range: float
+      tilt2:
+        description: Tilt of the order-2 multipole [rad].
+        range: float
+      Bn2:
+        description: Normal field component of order 2 [T/m^2].
+        range: float
+      Bs2:
+        description: Skew field component of order 2 [T/m^2].
+        range: float
+      Kn2:
+        description: Normalized normal component of order 2 [1/m^3].
+        range: float
+      Ks2:
+        description: Normalized skew component of order 2 [1/m^3].
+        range: float
+      Bn2L:
+        description: Length integrated normal field component of order 2 [T*m/m^2].
+        range: float
+      Bs2L:
+        description: Length integrated skew field component of order 2 [T*m/m^2].
+        range: float
+      Kn2L:
+        description: Length integrated normalized normal component of order 2 [1/m^2].
+        range: float
+      Ks2L:
+        description: Length integrated normalized skew component of order 2 [1/m^2].
+        range: float
+      Bn2_taper:
+        description: Tapering parameter associated with Bn2.
+        range: float
+      Bs2_taper:
+        description: Tapering parameter associated with Bs2.
+        range: float
+      Kn2_taper:
+        description: Tapering parameter associated with Kn2.
+        range: float
+      Ks2_taper:
+        description: Tapering parameter associated with Ks2.
+        range: float
+      Bn2L_taper:
+        description: Tapering parameter associated with Bn2L.
+        range: float
+      Bs2L_taper:
+        description: Tapering parameter associated with Bs2L.
+        range: float
+      Kn2L_taper:
+        description: Tapering parameter associated with Kn2L.
+        range: float
+      Ks2L_taper:
+        description: Tapering parameter associated with Ks2L.
+        range: float
+      tilt3:
+        description: Tilt of the order-3 multipole [rad].
+        range: float
+      Bn3:
+        description: Normal field component of order 3 [T/m^3].
+        range: float
+      Bs3:
+        description: Skew field component of order 3 [T/m^3].
+        range: float
+      Kn3:
+        description: Normalized normal component of order 3 [1/m^4].
+        range: float
+      Ks3:
+        description: Normalized skew component of order 3 [1/m^4].
+        range: float
+      Bn3L:
+        description: Length integrated normal field component of order 3 [T*m/m^3].
+        range: float
+      Bs3L:
+        description: Length integrated skew field component of order 3 [T*m/m^3].
+        range: float
+      Kn3L:
+        description: Length integrated normalized normal component of order 3 [1/m^3].
+        range: float
+      Ks3L:
+        description: Length integrated normalized skew component of order 3 [1/m^3].
+        range: float
+      Bn3_taper:
+        description: Tapering parameter associated with Bn3.
+        range: float
+      Bs3_taper:
+        description: Tapering parameter associated with Bs3.
+        range: float
+      Kn3_taper:
+        description: Tapering parameter associated with Kn3.
+        range: float
+      Ks3_taper:
+        description: Tapering parameter associated with Ks3.
+        range: float
+      Bn3L_taper:
+        description: Tapering parameter associated with Bn3L.
+        range: float
+      Bs3L_taper:
+        description: Tapering parameter associated with Bs3L.
+        range: float
+      Kn3L_taper:
+        description: Tapering parameter associated with Kn3L.
+        range: float
+      Ks3L_taper:
+        description: Tapering parameter associated with Ks3L.
+        range: float
+      tilt4:
+        description: Tilt of the order-4 multipole [rad].
+        range: float
+      Bn4:
+        description: Normal field component of order 4 [T/m^4].
+        range: float
+      Bs4:
+        description: Skew field component of order 4 [T/m^4].
+        range: float
+      Kn4:
+        description: Normalized normal component of order 4 [1/m^5].
+        range: float
+      Ks4:
+        description: Normalized skew component of order 4 [1/m^5].
+        range: float
+      Bn4L:
+        description: Length integrated normal field component of order 4 [T*m/m^4].
+        range: float
+      Bs4L:
+        description: Length integrated skew field component of order 4 [T*m/m^4].
+        range: float
+      Kn4L:
+        description: Length integrated normalized normal component of order 4 [1/m^4].
+        range: float
+      Ks4L:
+        description: Length integrated normalized skew component of order 4 [1/m^4].
+        range: float
+      Bn4_taper:
+        description: Tapering parameter associated with Bn4.
+        range: float
+      Bs4_taper:
+        description: Tapering parameter associated with Bs4.
+        range: float
+      Kn4_taper:
+        description: Tapering parameter associated with Kn4.
+        range: float
+      Ks4_taper:
+        description: Tapering parameter associated with Ks4.
+        range: float
+      Bn4L_taper:
+        description: Tapering parameter associated with Bn4L.
+        range: float
+      Bs4L_taper:
+        description: Tapering parameter associated with Bs4L.
+        range: float
+      Kn4L_taper:
+        description: Tapering parameter associated with Kn4L.
+        range: float
+      Ks4L_taper:
+        description: Tapering parameter associated with Ks4L.
+        range: float
+      tilt5:
+        description: Tilt of the order-5 multipole [rad].
+        range: float
+      Bn5:
+        description: Normal field component of order 5 [T/m^5].
+        range: float
+      Bs5:
+        description: Skew field component of order 5 [T/m^5].
+        range: float
+      Kn5:
+        description: Normalized normal component of order 5 [1/m^6].
+        range: float
+      Ks5:
+        description: Normalized skew component of order 5 [1/m^6].
+        range: float
+      Bn5L:
+        description: Length integrated normal field component of order 5 [T*m/m^5].
+        range: float
+      Bs5L:
+        description: Length integrated skew field component of order 5 [T*m/m^5].
+        range: float
+      Kn5L:
+        description: Length integrated normalized normal component of order 5 [1/m^5].
+        range: float
+      Ks5L:
+        description: Length integrated normalized skew component of order 5 [1/m^5].
+        range: float
+      Bn5_taper:
+        description: Tapering parameter associated with Bn5.
+        range: float
+      Bs5_taper:
+        description: Tapering parameter associated with Bs5.
+        range: float
+      Kn5_taper:
+        description: Tapering parameter associated with Kn5.
+        range: float
+      Ks5_taper:
+        description: Tapering parameter associated with Ks5.
+        range: float
+      Bn5L_taper:
+        description: Tapering parameter associated with Bn5L.
+        range: float
+      Bs5L_taper:
+        description: Tapering parameter associated with Bs5L.
+        range: float
+      Kn5L_taper:
+        description: Tapering parameter associated with Kn5L.
+        range: float
+      Ks5L_taper:
+        description: Tapering parameter associated with Ks5L.
+        range: float
+      tilt6:
+        description: Tilt of the order-6 multipole [rad].
+        range: float
+      Bn6:
+        description: Normal field component of order 6 [T/m^6].
+        range: float
+      Bs6:
+        description: Skew field component of order 6 [T/m^6].
+        range: float
+      Kn6:
+        description: Normalized normal component of order 6 [1/m^7].
+        range: float
+      Ks6:
+        description: Normalized skew component of order 6 [1/m^7].
+        range: float
+      Bn6L:
+        description: Length integrated normal field component of order 6 [T*m/m^6].
+        range: float
+      Bs6L:
+        description: Length integrated skew field component of order 6 [T*m/m^6].
+        range: float
+      Kn6L:
+        description: Length integrated normalized normal component of order 6 [1/m^6].
+        range: float
+      Ks6L:
+        description: Length integrated normalized skew component of order 6 [1/m^6].
+        range: float
+      Bn6_taper:
+        description: Tapering parameter associated with Bn6.
+        range: float
+      Bs6_taper:
+        description: Tapering parameter associated with Bs6.
+        range: float
+      Kn6_taper:
+        description: Tapering parameter associated with Kn6.
+        range: float
+      Ks6_taper:
+        description: Tapering parameter associated with Ks6.
+        range: float
+      Bn6L_taper:
+        description: Tapering parameter associated with Bn6L.
+        range: float
+      Bs6L_taper:
+        description: Tapering parameter associated with Bs6L.
+        range: float
+      Kn6L_taper:
+        description: Tapering parameter associated with Kn6L.
+        range: float
+      Ks6L_taper:
+        description: Tapering parameter associated with Ks6L.
+        range: float
+      tilt7:
+        description: Tilt of the order-7 multipole [rad].
+        range: float
+      Bn7:
+        description: Normal field component of order 7 [T/m^7].
+        range: float
+      Bs7:
+        description: Skew field component of order 7 [T/m^7].
+        range: float
+      Kn7:
+        description: Normalized normal component of order 7 [1/m^8].
+        range: float
+      Ks7:
+        description: Normalized skew component of order 7 [1/m^8].
+        range: float
+      Bn7L:
+        description: Length integrated normal field component of order 7 [T*m/m^7].
+        range: float
+      Bs7L:
+        description: Length integrated skew field component of order 7 [T*m/m^7].
+        range: float
+      Kn7L:
+        description: Length integrated normalized normal component of order 7 [1/m^7].
+        range: float
+      Ks7L:
+        description: Length integrated normalized skew component of order 7 [1/m^7].
+        range: float
+      Bn7_taper:
+        description: Tapering parameter associated with Bn7.
+        range: float
+      Bs7_taper:
+        description: Tapering parameter associated with Bs7.
+        range: float
+      Kn7_taper:
+        description: Tapering parameter associated with Kn7.
+        range: float
+      Ks7_taper:
+        description: Tapering parameter associated with Ks7.
+        range: float
+      Bn7L_taper:
+        description: Tapering parameter associated with Bn7L.
+        range: float
+      Bs7L_taper:
+        description: Tapering parameter associated with Bs7L.
+        range: float
+      Kn7L_taper:
+        description: Tapering parameter associated with Kn7L.
+        range: float
+      Ks7L_taper:
+        description: Tapering parameter associated with Ks7L.
+        range: float
+      tilt8:
+        description: Tilt of the order-8 multipole [rad].
+        range: float
+      Bn8:
+        description: Normal field component of order 8 [T/m^8].
+        range: float
+      Bs8:
+        description: Skew field component of order 8 [T/m^8].
+        range: float
+      Kn8:
+        description: Normalized normal component of order 8 [1/m^9].
+        range: float
+      Ks8:
+        description: Normalized skew component of order 8 [1/m^9].
+        range: float
+      Bn8L:
+        description: Length integrated normal field component of order 8 [T*m/m^8].
+        range: float
+      Bs8L:
+        description: Length integrated skew field component of order 8 [T*m/m^8].
+        range: float
+      Kn8L:
+        description: Length integrated normalized normal component of order 8 [1/m^8].
+        range: float
+      Ks8L:
+        description: Length integrated normalized skew component of order 8 [1/m^8].
+        range: float
+      Bn8_taper:
+        description: Tapering parameter associated with Bn8.
+        range: float
+      Bs8_taper:
+        description: Tapering parameter associated with Bs8.
+        range: float
+      Kn8_taper:
+        description: Tapering parameter associated with Kn8.
+        range: float
+      Ks8_taper:
+        description: Tapering parameter associated with Ks8.
+        range: float
+      Bn8L_taper:
+        description: Tapering parameter associated with Bn8L.
+        range: float
+      Bs8L_taper:
+        description: Tapering parameter associated with Bs8L.
+        range: float
+      Kn8L_taper:
+        description: Tapering parameter associated with Kn8L.
+        range: float
+      Ks8L_taper:
+        description: Tapering parameter associated with Ks8L.
+        range: float
+      tilt9:
+        description: Tilt of the order-9 multipole [rad].
+        range: float
+      Bn9:
+        description: Normal field component of order 9 [T/m^9].
+        range: float
+      Bs9:
+        description: Skew field component of order 9 [T/m^9].
+        range: float
+      Kn9:
+        description: Normalized normal component of order 9 [1/m^10].
+        range: float
+      Ks9:
+        description: Normalized skew component of order 9 [1/m^10].
+        range: float
+      Bn9L:
+        description: Length integrated normal field component of order 9 [T*m/m^9].
+        range: float
+      Bs9L:
+        description: Length integrated skew field component of order 9 [T*m/m^9].
+        range: float
+      Kn9L:
+        description: Length integrated normalized normal component of order 9 [1/m^9].
+        range: float
+      Ks9L:
+        description: Length integrated normalized skew component of order 9 [1/m^9].
+        range: float
+      Bn9_taper:
+        description: Tapering parameter associated with Bn9.
+        range: float
+      Bs9_taper:
+        description: Tapering parameter associated with Bs9.
+        range: float
+      Kn9_taper:
+        description: Tapering parameter associated with Kn9.
+        range: float
+      Ks9_taper:
+        description: Tapering parameter associated with Ks9.
+        range: float
+      Bn9L_taper:
+        description: Tapering parameter associated with Bn9L.
+        range: float
+      Bs9L_taper:
+        description: Tapering parameter associated with Bs9L.
+        range: float
+      Kn9L_taper:
+        description: Tapering parameter associated with Kn9L.
+        range: float
+      Ks9L_taper:
+        description: Tapering parameter associated with Ks9L.
+        range: float
+      tilt10:
+        description: Tilt of the order-10 multipole [rad].
+        range: float
+      Bn10:
+        description: Normal field component of order 10 [T/m^10].
+        range: float
+      Bs10:
+        description: Skew field component of order 10 [T/m^10].
+        range: float
+      Kn10:
+        description: Normalized normal component of order 10 [1/m^11].
+        range: float
+      Ks10:
+        description: Normalized skew component of order 10 [1/m^11].
+        range: float
+      Bn10L:
+        description: Length integrated normal field component of order 10 [T*m/m^10].
+        range: float
+      Bs10L:
+        description: Length integrated skew field component of order 10 [T*m/m^10].
+        range: float
+      Kn10L:
+        description: Length integrated normalized normal component of order 10 [1/m^10].
+        range: float
+      Ks10L:
+        description: Length integrated normalized skew component of order 10 [1/m^10].
+        range: float
+      Bn10_taper:
+        description: Tapering parameter associated with Bn10.
+        range: float
+      Bs10_taper:
+        description: Tapering parameter associated with Bs10.
+        range: float
+      Kn10_taper:
+        description: Tapering parameter associated with Kn10.
+        range: float
+      Ks10_taper:
+        description: Tapering parameter associated with Ks10.
+        range: float
+      Bn10L_taper:
+        description: Tapering parameter associated with Bn10L.
+        range: float
+      Bs10L_taper:
+        description: Tapering parameter associated with Bs10L.
+        range: float
+      Kn10L_taper:
+        description: Tapering parameter associated with Kn10L.
+        range: float
+      Ks10L_taper:
+        description: Tapering parameter associated with Ks10L.
+        range: float
+      tilt11:
+        description: Tilt of the order-11 multipole [rad].
+        range: float
+      Bn11:
+        description: Normal field component of order 11 [T/m^11].
+        range: float
+      Bs11:
+        description: Skew field component of order 11 [T/m^11].
+        range: float
+      Kn11:
+        description: Normalized normal component of order 11 [1/m^12].
+        range: float
+      Ks11:
+        description: Normalized skew component of order 11 [1/m^12].
+        range: float
+      Bn11L:
+        description: Length integrated normal field component of order 11 [T*m/m^11].
+        range: float
+      Bs11L:
+        description: Length integrated skew field component of order 11 [T*m/m^11].
+        range: float
+      Kn11L:
+        description: Length integrated normalized normal component of order 11 [1/m^11].
+        range: float
+      Ks11L:
+        description: Length integrated normalized skew component of order 11 [1/m^11].
+        range: float
+      Bn11_taper:
+        description: Tapering parameter associated with Bn11.
+        range: float
+      Bs11_taper:
+        description: Tapering parameter associated with Bs11.
+        range: float
+      Kn11_taper:
+        description: Tapering parameter associated with Kn11.
+        range: float
+      Ks11_taper:
+        description: Tapering parameter associated with Ks11.
+        range: float
+      Bn11L_taper:
+        description: Tapering parameter associated with Bn11L.
+        range: float
+      Bs11L_taper:
+        description: Tapering parameter associated with Bs11L.
+        range: float
+      Kn11L_taper:
+        description: Tapering parameter associated with Kn11L.
+        range: float
+      Ks11L_taper:
+        description: Tapering parameter associated with Ks11L.
+        range: float
+      tilt12:
+        description: Tilt of the order-12 multipole [rad].
+        range: float
+      Bn12:
+        description: Normal field component of order 12 [T/m^12].
+        range: float
+      Bs12:
+        description: Skew field component of order 12 [T/m^12].
+        range: float
+      Kn12:
+        description: Normalized normal component of order 12 [1/m^13].
+        range: float
+      Ks12:
+        description: Normalized skew component of order 12 [1/m^13].
+        range: float
+      Bn12L:
+        description: Length integrated normal field component of order 12 [T*m/m^12].
+        range: float
+      Bs12L:
+        description: Length integrated skew field component of order 12 [T*m/m^12].
+        range: float
+      Kn12L:
+        description: Length integrated normalized normal component of order 12 [1/m^12].
+        range: float
+      Ks12L:
+        description: Length integrated normalized skew component of order 12 [1/m^12].
+        range: float
+      Bn12_taper:
+        description: Tapering parameter associated with Bn12.
+        range: float
+      Bs12_taper:
+        description: Tapering parameter associated with Bs12.
+        range: float
+      Kn12_taper:
+        description: Tapering parameter associated with Kn12.
+        range: float
+      Ks12_taper:
+        description: Tapering parameter associated with Ks12.
+        range: float
+      Bn12L_taper:
+        description: Tapering parameter associated with Bn12L.
+        range: float
+      Bs12L_taper:
+        description: Tapering parameter associated with Bs12L.
+        range: float
+      Kn12L_taper:
+        description: Tapering parameter associated with Kn12L.
+        range: float
+      Ks12L_taper:
+        description: Tapering parameter associated with Ks12L.
+        range: float
+      tilt13:
+        description: Tilt of the order-13 multipole [rad].
+        range: float
+      Bn13:
+        description: Normal field component of order 13 [T/m^13].
+        range: float
+      Bs13:
+        description: Skew field component of order 13 [T/m^13].
+        range: float
+      Kn13:
+        description: Normalized normal component of order 13 [1/m^14].
+        range: float
+      Ks13:
+        description: Normalized skew component of order 13 [1/m^14].
+        range: float
+      Bn13L:
+        description: Length integrated normal field component of order 13 [T*m/m^13].
+        range: float
+      Bs13L:
+        description: Length integrated skew field component of order 13 [T*m/m^13].
+        range: float
+      Kn13L:
+        description: Length integrated normalized normal component of order 13 [1/m^13].
+        range: float
+      Ks13L:
+        description: Length integrated normalized skew component of order 13 [1/m^13].
+        range: float
+      Bn13_taper:
+        description: Tapering parameter associated with Bn13.
+        range: float
+      Bs13_taper:
+        description: Tapering parameter associated with Bs13.
+        range: float
+      Kn13_taper:
+        description: Tapering parameter associated with Kn13.
+        range: float
+      Ks13_taper:
+        description: Tapering parameter associated with Ks13.
+        range: float
+      Bn13L_taper:
+        description: Tapering parameter associated with Bn13L.
+        range: float
+      Bs13L_taper:
+        description: Tapering parameter associated with Bs13L.
+        range: float
+      Kn13L_taper:
+        description: Tapering parameter associated with Kn13L.
+        range: float
+      Ks13L_taper:
+        description: Tapering parameter associated with Ks13L.
+        range: float
+      tilt14:
+        description: Tilt of the order-14 multipole [rad].
+        range: float
+      Bn14:
+        description: Normal field component of order 14 [T/m^14].
+        range: float
+      Bs14:
+        description: Skew field component of order 14 [T/m^14].
+        range: float
+      Kn14:
+        description: Normalized normal component of order 14 [1/m^15].
+        range: float
+      Ks14:
+        description: Normalized skew component of order 14 [1/m^15].
+        range: float
+      Bn14L:
+        description: Length integrated normal field component of order 14 [T*m/m^14].
+        range: float
+      Bs14L:
+        description: Length integrated skew field component of order 14 [T*m/m^14].
+        range: float
+      Kn14L:
+        description: Length integrated normalized normal component of order 14 [1/m^14].
+        range: float
+      Ks14L:
+        description: Length integrated normalized skew component of order 14 [1/m^14].
+        range: float
+      Bn14_taper:
+        description: Tapering parameter associated with Bn14.
+        range: float
+      Bs14_taper:
+        description: Tapering parameter associated with Bs14.
+        range: float
+      Kn14_taper:
+        description: Tapering parameter associated with Kn14.
+        range: float
+      Ks14_taper:
+        description: Tapering parameter associated with Ks14.
+        range: float
+      Bn14L_taper:
+        description: Tapering parameter associated with Bn14L.
+        range: float
+      Bs14L_taper:
+        description: Tapering parameter associated with Bs14L.
+        range: float
+      Kn14L_taper:
+        description: Tapering parameter associated with Kn14L.
+        range: float
+      Ks14L_taper:
+        description: Tapering parameter associated with Ks14L.
+        range: float
+      tilt15:
+        description: Tilt of the order-15 multipole [rad].
+        range: float
+      Bn15:
+        description: Normal field component of order 15 [T/m^15].
+        range: float
+      Bs15:
+        description: Skew field component of order 15 [T/m^15].
+        range: float
+      Kn15:
+        description: Normalized normal component of order 15 [1/m^16].
+        range: float
+      Ks15:
+        description: Normalized skew component of order 15 [1/m^16].
+        range: float
+      Bn15L:
+        description: Length integrated normal field component of order 15 [T*m/m^15].
+        range: float
+      Bs15L:
+        description: Length integrated skew field component of order 15 [T*m/m^15].
+        range: float
+      Kn15L:
+        description: Length integrated normalized normal component of order 15 [1/m^15].
+        range: float
+      Ks15L:
+        description: Length integrated normalized skew component of order 15 [1/m^15].
+        range: float
+      Bn15_taper:
+        description: Tapering parameter associated with Bn15.
+        range: float
+      Bs15_taper:
+        description: Tapering parameter associated with Bs15.
+        range: float
+      Kn15_taper:
+        description: Tapering parameter associated with Kn15.
+        range: float
+      Ks15_taper:
+        description: Tapering parameter associated with Ks15.
+        range: float
+      Bn15L_taper:
+        description: Tapering parameter associated with Bn15L.
+        range: float
+      Bs15L_taper:
+        description: Tapering parameter associated with Bs15L.
+        range: float
+      Kn15L_taper:
+        description: Tapering parameter associated with Kn15L.
+        range: float
+      Ks15L_taper:
+        description: Tapering parameter associated with Ks15L.
+        range: float
+      tilt16:
+        description: Tilt of the order-16 multipole [rad].
+        range: float
+      Bn16:
+        description: Normal field component of order 16 [T/m^16].
+        range: float
+      Bs16:
+        description: Skew field component of order 16 [T/m^16].
+        range: float
+      Kn16:
+        description: Normalized normal component of order 16 [1/m^17].
+        range: float
+      Ks16:
+        description: Normalized skew component of order 16 [1/m^17].
+        range: float
+      Bn16L:
+        description: Length integrated normal field component of order 16 [T*m/m^16].
+        range: float
+      Bs16L:
+        description: Length integrated skew field component of order 16 [T*m/m^16].
+        range: float
+      Kn16L:
+        description: Length integrated normalized normal component of order 16 [1/m^16].
+        range: float
+      Ks16L:
+        description: Length integrated normalized skew component of order 16 [1/m^16].
+        range: float
+      Bn16_taper:
+        description: Tapering parameter associated with Bn16.
+        range: float
+      Bs16_taper:
+        description: Tapering parameter associated with Bs16.
+        range: float
+      Kn16_taper:
+        description: Tapering parameter associated with Kn16.
+        range: float
+      Ks16_taper:
+        description: Tapering parameter associated with Ks16.
+        range: float
+      Bn16L_taper:
+        description: Tapering parameter associated with Bn16L.
+        range: float
+      Bs16L_taper:
+        description: Tapering parameter associated with Bs16L.
+        range: float
+      Kn16L_taper:
+        description: Tapering parameter associated with Kn16L.
+        range: float
+      Ks16L_taper:
+        description: Tapering parameter associated with Ks16L.
+        range: float
+      tilt17:
+        description: Tilt of the order-17 multipole [rad].
+        range: float
+      Bn17:
+        description: Normal field component of order 17 [T/m^17].
+        range: float
+      Bs17:
+        description: Skew field component of order 17 [T/m^17].
+        range: float
+      Kn17:
+        description: Normalized normal component of order 17 [1/m^18].
+        range: float
+      Ks17:
+        description: Normalized skew component of order 17 [1/m^18].
+        range: float
+      Bn17L:
+        description: Length integrated normal field component of order 17 [T*m/m^17].
+        range: float
+      Bs17L:
+        description: Length integrated skew field component of order 17 [T*m/m^17].
+        range: float
+      Kn17L:
+        description: Length integrated normalized normal component of order 17 [1/m^17].
+        range: float
+      Ks17L:
+        description: Length integrated normalized skew component of order 17 [1/m^17].
+        range: float
+      Bn17_taper:
+        description: Tapering parameter associated with Bn17.
+        range: float
+      Bs17_taper:
+        description: Tapering parameter associated with Bs17.
+        range: float
+      Kn17_taper:
+        description: Tapering parameter associated with Kn17.
+        range: float
+      Ks17_taper:
+        description: Tapering parameter associated with Ks17.
+        range: float
+      Bn17L_taper:
+        description: Tapering parameter associated with Bn17L.
+        range: float
+      Bs17L_taper:
+        description: Tapering parameter associated with Bs17L.
+        range: float
+      Kn17L_taper:
+        description: Tapering parameter associated with Kn17L.
+        range: float
+      Ks17L_taper:
+        description: Tapering parameter associated with Ks17L.
+        range: float
+      tilt18:
+        description: Tilt of the order-18 multipole [rad].
+        range: float
+      Bn18:
+        description: Normal field component of order 18 [T/m^18].
+        range: float
+      Bs18:
+        description: Skew field component of order 18 [T/m^18].
+        range: float
+      Kn18:
+        description: Normalized normal component of order 18 [1/m^19].
+        range: float
+      Ks18:
+        description: Normalized skew component of order 18 [1/m^19].
+        range: float
+      Bn18L:
+        description: Length integrated normal field component of order 18 [T*m/m^18].
+        range: float
+      Bs18L:
+        description: Length integrated skew field component of order 18 [T*m/m^18].
+        range: float
+      Kn18L:
+        description: Length integrated normalized normal component of order 18 [1/m^18].
+        range: float
+      Ks18L:
+        description: Length integrated normalized skew component of order 18 [1/m^18].
+        range: float
+      Bn18_taper:
+        description: Tapering parameter associated with Bn18.
+        range: float
+      Bs18_taper:
+        description: Tapering parameter associated with Bs18.
+        range: float
+      Kn18_taper:
+        description: Tapering parameter associated with Kn18.
+        range: float
+      Ks18_taper:
+        description: Tapering parameter associated with Ks18.
+        range: float
+      Bn18L_taper:
+        description: Tapering parameter associated with Bn18L.
+        range: float
+      Bs18L_taper:
+        description: Tapering parameter associated with Bs18L.
+        range: float
+      Kn18L_taper:
+        description: Tapering parameter associated with Kn18L.
+        range: float
+      Ks18L_taper:
+        description: Tapering parameter associated with Ks18L.
+        range: float
+      tilt19:
+        description: Tilt of the order-19 multipole [rad].
+        range: float
+      Bn19:
+        description: Normal field component of order 19 [T/m^19].
+        range: float
+      Bs19:
+        description: Skew field component of order 19 [T/m^19].
+        range: float
+      Kn19:
+        description: Normalized normal component of order 19 [1/m^20].
+        range: float
+      Ks19:
+        description: Normalized skew component of order 19 [1/m^20].
+        range: float
+      Bn19L:
+        description: Length integrated normal field component of order 19 [T*m/m^19].
+        range: float
+      Bs19L:
+        description: Length integrated skew field component of order 19 [T*m/m^19].
+        range: float
+      Kn19L:
+        description: Length integrated normalized normal component of order 19 [1/m^19].
+        range: float
+      Ks19L:
+        description: Length integrated normalized skew component of order 19 [1/m^19].
+        range: float
+      Bn19_taper:
+        description: Tapering parameter associated with Bn19.
+        range: float
+      Bs19_taper:
+        description: Tapering parameter associated with Bs19.
+        range: float
+      Kn19_taper:
+        description: Tapering parameter associated with Kn19.
+        range: float
+      Ks19_taper:
+        description: Tapering parameter associated with Ks19.
+        range: float
+      Bn19L_taper:
+        description: Tapering parameter associated with Bn19L.
+        range: float
+      Bs19L_taper:
+        description: Tapering parameter associated with Bs19L.
+        range: float
+      Kn19L_taper:
+        description: Tapering parameter associated with Kn19L.
+        range: float
+      Ks19L_taper:
+        description: Tapering parameter associated with Ks19L.
+        range: float
+      tilt20:
+        description: Tilt of the order-20 multipole [rad].
+        range: float
+      Bn20:
+        description: Normal field component of order 20 [T/m^20].
+        range: float
+      Bs20:
+        description: Skew field component of order 20 [T/m^20].
+        range: float
+      Kn20:
+        description: Normalized normal component of order 20 [1/m^21].
+        range: float
+      Ks20:
+        description: Normalized skew component of order 20 [1/m^21].
+        range: float
+      Bn20L:
+        description: Length integrated normal field component of order 20 [T*m/m^20].
+        range: float
+      Bs20L:
+        description: Length integrated skew field component of order 20 [T*m/m^20].
+        range: float
+      Kn20L:
+        description: Length integrated normalized normal component of order 20 [1/m^20].
+        range: float
+      Ks20L:
+        description: Length integrated normalized skew component of order 20 [1/m^20].
+        range: float
+      Bn20_taper:
+        description: Tapering parameter associated with Bn20.
+        range: float
+      Bs20_taper:
+        description: Tapering parameter associated with Bs20.
+        range: float
+      Kn20_taper:
+        description: Tapering parameter associated with Kn20.
+        range: float
+      Ks20_taper:
+        description: Tapering parameter associated with Ks20.
+        range: float
+      Bn20L_taper:
+        description: Tapering parameter associated with Bn20L.
+        range: float
+      Bs20L_taper:
+        description: Tapering parameter associated with Bs20L.
+        range: float
+      Kn20L_taper:
+        description: Tapering parameter associated with Kn20L.
+        range: float
+      Ks20L_taper:
+        description: Tapering parameter associated with Ks20L.
+        range: float
+      tilt21:
+        description: Tilt of the order-21 multipole [rad].
+        range: float
+      Bn21:
+        description: Normal field component of order 21 [T/m^21].
+        range: float
+      Bs21:
+        description: Skew field component of order 21 [T/m^21].
+        range: float
+      Kn21:
+        description: Normalized normal component of order 21 [1/m^22].
+        range: float
+      Ks21:
+        description: Normalized skew component of order 21 [1/m^22].
+        range: float
+      Bn21L:
+        description: Length integrated normal field component of order 21 [T*m/m^21].
+        range: float
+      Bs21L:
+        description: Length integrated skew field component of order 21 [T*m/m^21].
+        range: float
+      Kn21L:
+        description: Length integrated normalized normal component of order 21 [1/m^21].
+        range: float
+      Ks21L:
+        description: Length integrated normalized skew component of order 21 [1/m^21].
+        range: float
+      Bn21_taper:
+        description: Tapering parameter associated with Bn21.
+        range: float
+      Bs21_taper:
+        description: Tapering parameter associated with Bs21.
+        range: float
+      Kn21_taper:
+        description: Tapering parameter associated with Kn21.
+        range: float
+      Ks21_taper:
+        description: Tapering parameter associated with Ks21.
+        range: float
+      Bn21L_taper:
+        description: Tapering parameter associated with Bn21L.
+        range: float
+      Bs21L_taper:
+        description: Tapering parameter associated with Bs21L.
+        range: float
+      Kn21L_taper:
+        description: Tapering parameter associated with Kn21L.
+        range: float
+      Ks21L_taper:
+        description: Tapering parameter associated with Ks21L.
+        range: float
+
+  MetaP:
+    description: >-
+      Metadata parameters (source/parameters/meta.md). Six standard
+      components plus arbitrary custom metadata (blueprint information,
+      power supply connections, ...). Information in MetaP must not
+      affect tracking. THIS CLASS IS OPEN: keys beyond the standard six
+      are permitted and are not validated.
+    attributes:
+      alias:
+        description: An alternate name for the element.
+      ID:
+        description: Element identification.
+      label:
+        description: A label string.
+      description:
+        description: >-
+          A descriptive string; not limited to a simple string, may be a
+          complex structure.
+        range: Any
+        inlined: true
+      location:
+        description: >-
+          Element's location; not limited to a simple string, may be a
+          complex structure.
+        range: Any
+        inlined: true
+      history:
+        description: >-
+          Element's history; not limited to a simple string, may be a
+          complex structure.
+        range: Any
+        inlined: true
+
+  ParticleP:
+    description: >-
+      Single particle coordinates or Gaussian beam distribution moments
+      (source/parameters/particle.md). Mean values default to 0; sigma
+      second moments default to null and are not relevant for a single
+      particle. Phase space component meaning is set by
+      phase_space_coordinates.
+    attributes:
+      x:
+        description: Mean x phase space component.
+        range: float
+        ifabsent: float(0)
+      px:
+        description: Mean px phase space component.
+        range: float
+        ifabsent: float(0)
+      y:
+        description: Mean y phase space component.
+        range: float
+        ifabsent: float(0)
+      py:
+        description: Mean py phase space component.
+        range: float
+        ifabsent: float(0)
+      z:
+        description: Mean z phase space component.
+        range: float
+        ifabsent: float(0)
+      pz:
+        description: Mean pz phase space component.
+        range: float
+        ifabsent: float(0)
+      spin_x:
+        description: Mean spin x-component.
+        range: float
+        ifabsent: float(0)
+      spin_y:
+        description: Mean spin y-component.
+        range: float
+        ifabsent: float(0)
+      spin_z:
+        description: Mean spin z-component.
+        range: float
+        ifabsent: float(0)
+      sigma_xx:
+        description: Second moment <x^2>.
+        range: float
+      sigma_xpx:
+        description: Second moment <x*px>.
+        range: float
+      sigma_xy:
+        description: Second moment <x*y>.
+        range: float
+      sigma_xpy:
+        description: Second moment <x*py>.
+        range: float
+      sigma_xz:
+        description: Second moment <x*z>.
+        range: float
+      sigma_xpz:
+        description: Second moment <x*pz>.
+        range: float
+      sigma_pxpx:
+        description: Second moment <px^2>.
+        range: float
+      sigma_pxy:
+        description: Second moment <px*y>.
+        range: float
+      sigma_pxpy:
+        description: Second moment <px*py>.
+        range: float
+      sigma_pxz:
+        description: Second moment <px*z>.
+        range: float
+      sigma_pxpz:
+        description: Second moment <px*pz>.
+        range: float
+      sigma_yy:
+        description: Second moment <y^2>.
+        range: float
+      sigma_ypy:
+        description: Second moment <y*py>.
+        range: float
+      sigma_yz:
+        description: Second moment <y*z>.
+        range: float
+      sigma_ypz:
+        description: Second moment <y*pz>.
+        range: float
+      sigma_pypy:
+        description: Second moment <py^2>.
+        range: float
+      sigma_pyz:
+        description: Second moment <py*z>.
+        range: float
+      sigma_pypz:
+        description: Second moment <py*pz>.
+        range: float
+      sigma_zz:
+        description: Second moment <z^2>.
+        range: float
+      sigma_zpz:
+        description: Second moment <z*pz>.
+        range: float
+      sigma_pzpz:
+        description: Second moment <pz^2>.
+        range: float
+
+  PatchP:
+    description: >-
+      Shift of the reference curve of a Patch element
+      (source/parameters/patch.md). To shift reference energy, time, or
+      species, use ReferenceChangeP.
+    attributes:
+      x_offset:
+        description: Offset in x-direction [m].
+        range: float
+        unit:
+          ucum_code: m
+      y_offset:
+        description: Offset in y-direction [m].
+        range: float
+        unit:
+          ucum_code: m
+      z_offset:
+        description: Offset in z-direction [m].
+        range: float
+        unit:
+          ucum_code: m
+      x_rot:
+        description: Rotation around x-axis [rad].
+        range: float
+        unit:
+          ucum_code: rad
+      y_rot:
+        description: Rotation around y-axis [rad].
+        range: float
+        unit:
+          ucum_code: rad
+      z_rot:
+        description: Rotation around z-axis [rad].
+        range: float
+        unit:
+          ucum_code: rad
+      flexible:
+        description: >-
+          true: user sets offsets and rotations. false (default): offsets
+          and rotations are computed from the branch layout.
+        range: boolean
+        ifabsent: "false"
+      ref_coords:
+        description: Coordinate system defining the length.
+        range: PatchRefCoordsEnum
+        ifabsent: string(EXIT_END)
+      user_sets_length:
+        description: Is the element length user set?
+        range: boolean
+        ifabsent: "false"
+
+  ReferenceP:
+    description: >-
+      Reference energy, species, and time at the upstream end of the
+      element (source/parameters/reference.md). User settable on
+      BeginningEle only; output (computed) on all other kinds.
+    attributes:
+      species_ref:
+        description: Reference species.
+      pc_ref:
+        description: Reference momentum times speed of light [eV; momentum*c].
+        range: float
+        ifabsent: float(0)
+      E_tot_ref:
+        description: Reference total energy [eV].
+        range: float
+        unit:
+          ucum_code: eV
+        ifabsent: float(0)
+      time_ref:
+        description: Reference time [s].
+        range: float
+        unit:
+          ucum_code: s
+        ifabsent: float(0)
+
+  ReferenceChangeP:
+    description: >-
+      Adjustment of reference parameters
+      (source/parameters/referencechange.md). Adjustments are only made
+      for non-null parameters. Only one of dE_ref, dpc_ref, E_tot_ref,
+      and pc_ref may be present; similarly only one of dtime_ref and
+      time_ref may be present.
+    attributes:
+      dtime_ref:
+        description: Reference time adjustment [s].
+        range: float
+        unit:
+          ucum_code: s
+      dE_ref:
+        description: Reference energy adjustment [eV].
+        range: float
+        unit:
+          ucum_code: eV
+      dpc_ref:
+        description: Reference momentum adjustment [eV].
+        range: float
+        unit:
+          ucum_code: eV
+      time_ref:
+        description: >-
+          Set reference time [s]. (The standard's component table lists
+          eV, an apparent typo for a time quantity.)
+        range: float
+        unit:
+          ucum_code: s
+      E_tot_ref:
+        description: Set reference energy [eV].
+        range: float
+        unit:
+          ucum_code: eV
+      pc_ref:
+        description: Set reference momentum [eV].
+        range: float
+        unit:
+          ucum_code: eV
+      species_ref:
+        description: Set reference species.
+      extra_dtime_ref:
+        description: >-
+          Correction to the reference time for particle motion that is not
+          straight or acceleration that is not linear in energy [s].
+          Referenced by the standard's prose (source/parameters/patch.md
+          and referencechange.md) though absent from the component table;
+          flagged as a documentation inconsistency.
+        range: float
+        unit:
+          ucum_code: s
+    rules:
+      # Only one of dE_ref, dpc_ref, E_tot_ref, and pc_ref may be present
+      # (pairwise exclusions, one ABSENT postcondition slot per rule so
+      # the JSON Schema translation enforces per-slot absence).
+      - description: dE_ref excludes dpc_ref.
+        preconditions:
+          slot_conditions:
+            dE_ref:
+              value_presence: PRESENT
+        postconditions:
+          slot_conditions:
+            dpc_ref:
+              value_presence: ABSENT
+      - description: dE_ref excludes E_tot_ref.
+        preconditions:
+          slot_conditions:
+            dE_ref:
+              value_presence: PRESENT
+        postconditions:
+          slot_conditions:
+            E_tot_ref:
+              value_presence: ABSENT
+      - description: dE_ref excludes pc_ref.
+        preconditions:
+          slot_conditions:
+            dE_ref:
+              value_presence: PRESENT
+        postconditions:
+          slot_conditions:
+            pc_ref:
+              value_presence: ABSENT
+      - description: dpc_ref excludes E_tot_ref.
+        preconditions:
+          slot_conditions:
+            dpc_ref:
+              value_presence: PRESENT
+        postconditions:
+          slot_conditions:
+            E_tot_ref:
+              value_presence: ABSENT
+      - description: dpc_ref excludes pc_ref.
+        preconditions:
+          slot_conditions:
+            dpc_ref:
+              value_presence: PRESENT
+        postconditions:
+          slot_conditions:
+            pc_ref:
+              value_presence: ABSENT
+      - description: E_tot_ref excludes pc_ref.
+        preconditions:
+          slot_conditions:
+            E_tot_ref:
+              value_presence: PRESENT
+        postconditions:
+          slot_conditions:
+            pc_ref:
+              value_presence: ABSENT
+      - description: Only one of dtime_ref and time_ref may be present.
+        preconditions:
+          slot_conditions:
+            dtime_ref:
+              value_presence: PRESENT
+        postconditions:
+          slot_conditions:
+            time_ref:
+              value_presence: ABSENT
+
+  RFP:
+    description: >-
+      RF parameters (source/parameters/rf.md). Either frequency or harmon
+      should be set but not both; either voltage or gradient should be set
+      but not both (voltage = gradient * L_active).
+    attributes:
+      frequency:
+        description: RF frequency [Hz].
+        range: float
+        unit:
+          ucum_code: Hz
+        ifabsent: float(0)
+      harmon:
+        description: >-
+          RF frequency harmonic number [unitless];
+          frequency = harmon / t1_ref with t1_ref the 1-turn reference
+          time.
+        range: float
+        ifabsent: float(0)
+      voltage:
+        description: RF voltage [V].
+        range: float
+        unit:
+          ucum_code: V
+        ifabsent: float(0)
+      gradient:
+        description: RF gradient [V/m].
+        range: float
+        unit:
+          ucum_code: V.m-1
+        ifabsent: float(0)
+      phase:
+        description: RF phase in units of rad/2pi.
+        range: float
+        ifabsent: float(0)
+      multipass_phase:
+        description: RF phase added to multipass elements [rad/2pi].
+        range: float
+        ifabsent: float(0)
+      cavity_type:
+        description: Cavity type.
+        range: CavityTypeEnum
+        ifabsent: string(STANDING_WAVE)
+      num_cells:
+        description: Number of cavity cells. Default null.
+        range: integer
+      zero_phase:
+        description: Sets what phase = 0 means.
+        range: ZeroPhaseEnum
+        ifabsent: string(ACCELERATING)
+      L_active:
+        description: >-
+          Active acceleration length [m]; the longitudinal length over
+          which there is an RF field. If not given, defaults to the value
+          of the element length.
+        range: float
+        unit:
+          ucum_code: m
+      dE_ref:
+        description: >-
+          Change in reference energy [eV]; the downstream reference energy
+          is E_tot_ref + dE_ref.
+        range: float
+        unit:
+          ucum_code: eV
+        ifabsent: float(0)
+    rules:
+      - description: Either frequency or harmon should be set but not both.
+        preconditions:
+          slot_conditions:
+            frequency:
+              value_presence: PRESENT
+        postconditions:
+          slot_conditions:
+            harmon:
+              value_presence: ABSENT
+      - description: Either voltage or gradient should be set but not both.
+        preconditions:
+          slot_conditions:
+            voltage:
+              value_presence: PRESENT
+        postconditions:
+          slot_conditions:
+            gradient:
+              value_presence: ABSENT
+
+  SolenoidP:
+    description: >-
+      Magnetic solenoid description (source/parameters/solenoid.md);
+      Ksol = q/P0 * Bsol.
+    attributes:
+      Ksol:
+        description: Normalized solenoid strength [1/m].
+        range: float
+        unit:
+          ucum_code: m-1
+      Bsol:
+        description: Solenoid field [T].
+        range: float
+        unit:
+          ucum_code: T
+
+  TaylorP:
+    description: >-
+      Taylor transport map from entrance to exit, including orbital phase
+      space and spin (source/parameters/taylor.md). Orbital component
+      meaning is set by phase_space_coordinates; spin transport uses a
+      quaternion rotation representation and is independent of the input
+      spin coordinates. NORMALIZED-FORM NOTE: the standard's
+      `term <coef> <e1> ... <e6>` lines are represented as lists of
+      TaylorTerm objects.
+    attributes:
+      x_out:
+        description: Taylor series for output x orbital component.
+        range: TaylorTerm
+        multivalued: true
+        inlined_as_list: true
+      px_out:
+        description: Taylor series for output px orbital component.
+        range: TaylorTerm
+        multivalued: true
+        inlined_as_list: true
+      y_out:
+        description: Taylor series for output y orbital component.
+        range: TaylorTerm
+        multivalued: true
+        inlined_as_list: true
+      py_out:
+        description: Taylor series for output py orbital component.
+        range: TaylorTerm
+        multivalued: true
+        inlined_as_list: true
+      z_out:
+        description: Taylor series for output z orbital component.
+        range: TaylorTerm
+        multivalued: true
+        inlined_as_list: true
+      pz_out:
+        description: Taylor series for output pz orbital component.
+        range: TaylorTerm
+        multivalued: true
+        inlined_as_list: true
+      S_q1_out:
+        description: Taylor series for output spin q1 quaternion component.
+        range: TaylorTerm
+        multivalued: true
+        inlined_as_list: true
+      S_qx_out:
+        description: Taylor series for output spin qx quaternion component.
+        range: TaylorTerm
+        multivalued: true
+        inlined_as_list: true
+      S_qy_out:
+        description: Taylor series for output spin qy quaternion component.
+        range: TaylorTerm
+        multivalued: true
+        inlined_as_list: true
+      S_qz_out:
+        description: Taylor series for output spin qz quaternion component.
+        range: TaylorTerm
+        multivalued: true
+        inlined_as_list: true
+      ref_in:
+        description: Input orbital reference point for the map.
+        range: PhaseSpaceRef
+        inlined: true
+
+  TwissP:
+    description: >-
+      Initial Twiss, coupling, and dispersion parameters, typically
+      specified at the beginning of a lattice branch
+      (source/parameters/twiss.md).
+    attributes:
+      alpha_a:
+        description: '"a" mode alpha [unitless].'
+        range: float
+      alpha_b:
+        description: '"b" mode alpha [unitless].'
+        range: float
+      beta_a:
+        description: '"a" mode beta [m].'
+        range: float
+        unit:
+          ucum_code: m
+      beta_b:
+        description: '"b" mode beta [m].'
+        range: float
+        unit:
+          ucum_code: m
+      cmat11:
+        description: c[1,1] coupling matrix component [unitless].
+        range: float
+      cmat12:
+        description: c[1,2] coupling matrix component [m].
+        range: float
+        unit:
+          ucum_code: m
+      cmat21:
+        description: c[2,1] coupling matrix component [1/m].
+        range: float
+        unit:
+          ucum_code: m-1
+      cmat22:
+        description: c[2,2] coupling matrix component [unitless].
+        range: float
+      eta_x:
+        description: x-axis dispersion [m].
+        range: float
+        unit:
+          ucum_code: m
+      eta_y:
+        description: y-axis dispersion [m].
+        range: float
+        unit:
+          ucum_code: m
+      etap_x:
+        description: x-axis momentum dispersion [unitless].
+        range: float
+      etap_y:
+        description: y-axis momentum dispersion [unitless].
+        range: float
+      deta_x_ds:
+        description: x-axis dispersion derivative [unitless].
+        range: float
+      deta_y_ds:
+        description: y-axis dispersion derivative [unitless].
+        range: float
+      phi_a:
+        description: '"a" mode phase [rad].'
+        range: float
+        unit:
+          ucum_code: rad
+      phi_b:
+        description: '"b" mode phase [rad].'
+        range: float
+        unit:
+          ucum_code: rad
+
+#=====================================================================
+# Lattice elements
+#=====================================================================
+
+  LatticeElement:
+    abstract: true
+    description: >-
+      Abstract base of all lattice element kinds
+      (source/lattice-elements.md). The `kind` slot is the type
+      designator; concrete classes are named exactly like the PALS
+      element kinds.
+    slots:
+      - name
+      - kind
+    slot_usage:
+      name:
+        pattern: "^[A-Za-z_][A-Za-z0-9_]*$"
+
+  InlineElement:
+    abstract: true
+    is_a: LatticeElement
+    description: >-
+      Abstract base of element kinds that sit inside a branch and carry
+      the ungrouped element parameters
+      (source/lattice-element-parameters.md, s:non.params). Girder and
+      Feedback elements are NOT InlineElements since the standard states
+      they have neither length nor s_position.
+    slots:
+      - length
+      - s_position
+      - is_on
+      - field_master
+      - direction
+
+  ACKicker:
+    is_a: InlineElement
+    description: >-
+      Time-dependent kicker (source/lattice-element-kinds.md,
+      s:ackicker).
+    slots:
+      - ACKickerP
+      - ApertureP
+      - BodyShiftP
+      - FloorP
+      - MetaP
+      - ReferenceP
+      - TrackingP
+
+  BeamBeam:
+    is_a: InlineElement
+    description: >-
+      Oppositely moving "strong" beam generating electromagnetic fields at
+      the interaction point (source/lattice-element-kinds.md, s:beambeam).
+      Zero length.
+    slots:
+      - ApertureP
+      - BeamBeamP
+      - BodyShiftP
+      - FloorP
+      - MetaP
+      - ReferenceP
+      - TrackingP
+    slot_usage:
+      length:
+        minimum_value: 0
+        maximum_value: 0
+
+  BeginningEle:
+    is_a: InlineElement
+    description: >-
+      Initial element at the start of a branch
+      (source/lattice-element-kinds.md, s:beginningele). Zero length. The
+      first element of every expanded branch must be its only
+      BeginningEle (documented; not machine-enforced). ReferenceP and
+      FloorP are user settable on this kind.
+    slots:
+      - ApertureP
+      - BodyShiftP
+      - FloorP
+      - MetaP
+      - ReferenceP
+      - TrackingP
+    slot_usage:
+      length:
+        minimum_value: 0
+        maximum_value: 0
+
+  Bend:
+    is_a: InlineElement
+    description: >-
+      Dipole bend; the curvilinear coordinate system through the element
+      is an arc with finite curvature
+      (source/lattice-element-kinds.md, s:bend). The element length is
+      the arc length.
+    slots:
+      - ApertureP
+      - BendP
+      - BodyShiftP
+      - ElectricMultipoleP
+      - FloorP
+      - MagneticMultipoleP
+      - MetaP
+      - ReferenceP
+      - TrackingP
+
+  Converter:
+    is_a: InlineElement
+    description: >-
+      Target (plate) onto which particles are slammed to generate
+      particles of a different type
+      (source/lattice-element-kinds.md, s:converter). Under construction.
+    slots:
+      - ApertureP
+      - BodyShiftP
+      - ConverterP
+      - ElectricMultipoleP
+      - FloorP
+      - MagneticMultipoleP
+      - MetaP
+      - ReferenceP
+      - TrackingP
+
+  CrabCavity:
+    is_a: InlineElement
+    description: >-
+      RF cavity that gives a longitudinal dependent transverse kick
+      (source/lattice-element-kinds.md, s:crabcavity). DOC INCONSISTENCY
+      (flagged upstream): the standard's prose calls this a "zero length
+      RF cavity" but states no must-be-zero rule, and its group list
+      omits RFP although its example sets RFP; this schema includes RFP
+      and does not constrain the length.
+    slots:
+      - ApertureP
+      - BodyShiftP
+      - ElectricMultipoleP
+      - FloorP
+      - MagneticMultipoleP
+      - MetaP
+      - ReferenceP
+      - RFP
+      - TrackingP
+
+  Drift:
+    is_a: InlineElement
+    description: >-
+      A space free and clear of any fields
+      (source/lattice-element-kinds.md, s:drift).
+    slots:
+      - ApertureP
+      - BodyShiftP
+      - FloorP
+      - MetaP
+      - ReferenceP
+      - TrackingP
+
+  EGun:
+    is_a: InlineElement
+    description: >-
+      Electron gun; encompasses a region starting from the cathode where
+      the electrons are generated
+      (source/lattice-element-kinds.md, s:egun). Under construction.
+    slots:
+      - ApertureP
+      - BodyShiftP
+      - ElectricMultipoleP
+      - FloorP
+      - MagneticMultipoleP
+      - MetaP
+      - ReferenceP
+      - TrackingP
+
+  Feedback:
+    is_a: LatticeElement
+    description: >-
+      Feedback circuit element (source/lattice-element-kinds.md,
+      s:feedback). Under construction; the standard documents no
+      parameter groups. This element has neither length nor s_position.
+
+  Fiducial:
+    is_a: InlineElement
+    description: >-
+      Fixes the position and orientation of the reference orbit within
+      the global coordinate system at its location; affects floor
+      coordinates both upstream and downstream
+      (source/lattice-element-kinds.md, s:fiducial). Under construction;
+      the standard documents no parameter groups. Zero length.
+    slot_usage:
+      length:
+        minimum_value: 0
+        maximum_value: 0
+
+  FloorShift:
+    is_a: InlineElement
+    description: >-
+      Shifts the reference curve in the global coordinate system without
+      affecting particle tracking
+      (source/lattice-element-kinds.md, s:floorshift).
+    slots:
+      - FloorShiftP
+      - MetaP
+      - ReferenceP
+
+  Foil:
+    is_a: InlineElement
+    description: >-
+      Planar sheet of material which can strip electrons from a particle
+      (source/lattice-element-kinds.md, s:foil). Under construction.
+    slots:
+      - ApertureP
+      - BodyShiftP
+      - FloorP
+      - FoilP
+      - MetaP
+      - ReferenceP
+      - TrackingP
+
+  Fork:
+    is_a: InlineElement
+    description: >-
+      Marks the start of an alternative branch for the beam (or for
+      X-rays or other particles generated by the beam) to follow;
+      connects lattice branches together
+      (source/lattice-element-kinds.md, s:fork). Zero length; ForkP is
+      required.
+    slots:
+      - ApertureP
+      - BodyShiftP
+      - FloorP
+      - ForkP
+      - MetaP
+      - ReferenceP
+      - TrackingP
+    slot_usage:
+      length:
+        minimum_value: 0
+        maximum_value: 0
+      ForkP:
+        required: true
+
+  Girder:
+    is_a: LatticeElement
+    description: >-
+      Support structure that orients the elements attached to it in space
+      (source/lattice-element-kinds.md, s:girder). Under construction;
+      the GirderP group is registered but unspecified. This element has
+      neither length nor s_position.
+    slots:
+      - GirderP
+
+  Instrument:
+    is_a: InlineElement
+    description: >-
+      Measurement element for diagnostics
+      (source/lattice-element-kinds.md, s:instrument). Under
+      construction.
+    slots:
+      - ApertureP
+      - BodyShiftP
+      - ElectricMultipoleP
+      - FloorP
+      - MagneticMultipoleP
+      - MetaP
+      - ReferenceP
+      - TrackingP
+
+  Kicker:
+    is_a: InlineElement
+    description: >-
+      Element that can deflect a beam transversely in both planes using a
+      zero-order multipole field
+      (source/lattice-element-kinds.md, s:kicker). Under construction.
+    slots:
+      - ApertureP
+      - BodyShiftP
+      - ElectricMultipoleP
+      - FloorP
+      - MagneticMultipoleP
+      - MetaP
+      - ReferenceP
+      - TrackingP
+
+  Marker:
+    is_a: InlineElement
+    description: >-
+      Zero length element to mark (name) a particular position; unit
+      transport map (source/lattice-element-kinds.md, s:marker). The last
+      element of an expanded branch must be a Marker (documented; not
+      machine-enforced).
+    slots:
+      - BodyShiftP
+      - FloorP
+      - MetaP
+      - ReferenceP
+    slot_usage:
+      length:
+        minimum_value: 0
+        maximum_value: 0
+
+  Mask:
+    is_a: InlineElement
+    description: >-
+      Collimation element defining an aperture of essentially arbitrary
+      shape (source/lattice-element-kinds.md, s:mask). Under
+      construction.
+    slots:
+      - ApertureP
+      - BodyShiftP
+      - ElectricMultipoleP
+      - FloorP
+      - MagneticMultipoleP
+      - MetaP
+      - ReferenceP
+      - TrackingP
+
+  Match:
+    is_a: InlineElement
+    description: >-
+      Matches the orbit, Twiss, and dispersion parameters between two
+      locations (source/lattice-element-kinds.md, s:match). Under
+      construction. Zero length.
+    slots:
+      - ApertureP
+      - BodyShiftP
+      - FloorP
+      - MetaP
+      - ReferenceP
+      - TrackingP
+    slot_usage:
+      length:
+        minimum_value: 0
+        maximum_value: 0
+
+  Multipole:
+    is_a: InlineElement
+    description: >-
+      General multipole element; fields are assumed uniform along the
+      longitudinal direction and may contain multipole contributions of
+      any order (source/lattice-element-kinds.md, s:multipole).
+    slots:
+      - ApertureP
+      - BodyShiftP
+      - ElectricMultipoleP
+      - FloorP
+      - MagneticMultipoleP
+      - MetaP
+      - ReferenceP
+      - TrackingP
+
+  Octupole:
+    is_a: InlineElement
+    description: >-
+      Element whose major field has a cubic dependence on transverse
+      offset (source/lattice-element-kinds.md, s:octupole).
+    slots:
+      - ApertureP
+      - BodyShiftP
+      - ElectricMultipoleP
+      - FloorP
+      - MagneticMultipoleP
+      - MetaP
+      - ReferenceP
+      - TrackingP
+
+  Patch:
+    is_a: InlineElement
+    description: >-
+      Shifts the reference orbit and time; commonly used to orient two
+      lines with respect to each other
+      (source/lattice-element-kinds.md, s:patch). Under construction.
+    slots:
+      - ApertureP
+      - BodyShiftP
+      - FloorP
+      - MetaP
+      - PatchP
+      - ReferenceP
+      - TrackingP
+
+  Quadrupole:
+    is_a: InlineElement
+    description: >-
+      Element whose major field has a linear dependence on transverse
+      offset (source/lattice-element-kinds.md, s:quadrupole).
+    slots:
+      - ApertureP
+      - BodyShiftP
+      - ElectricMultipoleP
+      - FloorP
+      - MagneticMultipoleP
+      - MetaP
+      - ReferenceP
+      - TrackingP
+
+  ReferenceChange:
+    is_a: InlineElement
+    description: >-
+      Adjusts reference parameters at any location in a branch; the
+      adjusted values are used for downstream elements
+      (source/lattice-element-kinds.md, s:reference.change).
+    slots:
+      - FloorP
+      - MetaP
+      - ReferenceChangeP
+      - ReferenceP
+      - TrackingP
+
+  RFCavity:
+    is_a: InlineElement
+    description: >-
+      RF cavity that accelerates or decelerates and focuses or defocuses
+      a charged particle beam using RF fields
+      (source/lattice-element-kinds.md, s:rfcavity). Under construction.
+      Multipole parameters represent DC fields.
+    slots:
+      - ApertureP
+      - BodyShiftP
+      - ElectricMultipoleP
+      - FloorP
+      - MagneticMultipoleP
+      - MetaP
+      - ReferenceP
+      - RFP
+      - SolenoidP
+      - TrackingP
+
+  Sextupole:
+    is_a: InlineElement
+    description: >-
+      Element whose major field has a quadratic dependence on transverse
+      offset (source/lattice-element-kinds.md, s:sextupole).
+    slots:
+      - ApertureP
+      - BodyShiftP
+      - ElectricMultipoleP
+      - FloorP
+      - MagneticMultipoleP
+      - MetaP
+      - ReferenceP
+      - TrackingP
+
+  Solenoid:
+    is_a: InlineElement
+    description: >-
+      Element whose magnetic field is dominated by a field aligned with
+      the magnetic axis (source/lattice-element-kinds.md, s:solenoid).
+    slots:
+      - ApertureP
+      - BodyShiftP
+      - ElectricMultipoleP
+      - FloorP
+      - MagneticMultipoleP
+      - MetaP
+      - ReferenceP
+      - SolenoidP
+      - TrackingP
+
+  Taylor:
+    is_a: InlineElement
+    description: >-
+      Taylor map from entrance coordinates to exit coordinates
+      (source/lattice-element-kinds.md, s:taylor). Under construction.
+      Zero length.
+    slots:
+      - ApertureP
+      - BodyShiftP
+      - FloorP
+      - MetaP
+      - ReferenceP
+      - TaylorP
+      - TrackingP
+    slot_usage:
+      length:
+        minimum_value: 0
+        maximum_value: 0
+
+  UnionEle:
+    is_a: InlineElement
+    description: >-
+      Holds a set of overlapping elements
+      (source/lattice-element-kinds.md, s:unionele). Each contained
+      element is nominally centered at the center of the UnionEle; use
+      the contained elements' BodyShiftP to shift them. WIRE-FORMAT NOTE:
+      the standard serializes `elements` as a mapping of name to element;
+      the normalization pre-pass converts it to a list with explicit
+      `name` fields.
+    slots:
+      - ApertureP
+      - BodyShiftP
+      - FloorP
+      - MetaP
+      - ReferenceP
+      - TrackingP
+    attributes:
+      elements:
+        description: The contained (overlapping) elements.
+        range: InlineElement
+        multivalued: true
+        inlined_as_list: true
+
+  Wiggler:
+    is_a: InlineElement
+    description: >-
+      Periodic array of alternating bending magnets (wiggler or
+      undulator) (source/lattice-element-kinds.md, s:wiggler). Under
+      construction.
+    slots:
+      - ApertureP
+      - BodyShiftP
+      - ElectricMultipoleP
+      - FloorP
+      - MagneticMultipoleP
+      - MetaP
+      - ReferenceP
+      - TrackingP
+
+#=====================================================================
+# Containers and root
+#=====================================================================
+
+  Branch:
+    description: >-
+      An ordered list of concrete lattice elements that can be tracked
+      through (source/definitions.md). In the expanded representation the
+      element list is fully materialized: the first element must be the
+      branch's only BeginningEle, the last element must be a Marker, and
+      elements are ordered by increasing s_position of their downstream
+      ends (documented; not machine-enforceable structurally). Root
+      branches are instantiated from root BeamLines; non-root branches
+      arise from Fork elements. The standard defines no serialized
+      marking of root vs non-root branches or of multipass physical
+      element sets; both remain implicit here.
+    slots:
+      - name
+    slot_usage:
+      name:
+        pattern: "^[A-Za-z_][A-Za-z0-9_]*$"
+    attributes:
+      periodic:
+        description: >-
+          True for a periodic (ring-like) branch where the closed orbit
+          and Twiss calculation is periodic; false (default) for
+          single-pass lines (source/beamlines.md).
+        range: boolean
+        ifabsent: "false"
+      elements:
+        description: The ordered, fully expanded list of lattice elements.
+        range: LatticeElement
+        multivalued: true
+        inlined_as_list: true
+        required: true
+
+  Lattice:
+    description: >-
+      Outermost structure holding a set of branches; can describe an
+      entire accelerator complex (source/lattice-construction.md). In the
+      expanded representation all branches (root and fork-created) are
+      present, concrete, and fully expanded.
+    slots:
+      - name
+      - kind
+    slot_usage:
+      name:
+        pattern: "^[A-Za-z_][A-Za-z0-9_]*$"
+    attributes:
+      branches:
+        description: The branches of this lattice.
+        range: Branch
+        multivalued: true
+        inlined_as_list: true
+        required: true
+
+  PalsRoot:
+    description: >-
+      The PALS root object (source/fundamentals.md, s:palsroot),
+      restricted to the expanded representation: `facility` holds one or
+      more fully expanded Lattice entries and nothing else (no
+      constants, beam lines, parameter-group definitions, or commands).
+    attributes:
+      version:
+        description: >-
+          Version of the PALS schema used in this file. The standard's
+          versioning scheme is not yet finalized; null is common.
+      authors:
+        description: >-
+          Authors associated with this file. Optional but recommended for
+          data provenance; per author the name is required.
+        range: Author
+        multivalued: true
+        inlined_as_list: true
+      notes:
+        description: Optional notes of interest.
+        multivalued: true
+      reminders:
+        description: >-
+          Optional reminder messages, meant to be communicated to the
+          user every time the file is read.
+        multivalued: true
+      extension_labels:
+        description: >-
+          Optional registered extension labels that PALS validation shall
+          ignore (source/extensions.md).
+        range: ExtensionLabels
+        inlined: true
+      phase_space_coordinates:
+        description: >-
+          Which of the four phase space coordinate systems is used
+          (source/coordinates.md, s:phase.space).
+        range: PhaseSpaceCoordinatesEnum
+        ifabsent: string(KINETIC_AND_MOMENTUM)
+      facility:
+        description: >-
+          The facility content. EXPANDED REPRESENTATION: one or more
+          fully expanded Lattice entries only.
+        range: Lattice
+        multivalued: true
+        inlined_as_list: true
+        required: true
+
+  PalsFile:
+    tree_root: true
+    description: >-
+      A PALS file in the EXPANDED representation. The whole document
+      hangs off the single top-level `PALS` mapping; information outside
+      the `PALS` node is outside the standard and ignored by PALS parsers
+      (this schema, being closed, does not model such extra content).
+    attributes:
+      PALS:
+        description: The PALS root object.
+        range: PalsRoot
+        required: true
+        inlined: true
